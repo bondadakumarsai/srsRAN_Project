@@ -72,7 +72,7 @@ public:
 
   // See interface for documentation.
   void
-  modulate(span<cf_t> ouput, const resource_grid_reader& grid, unsigned port_index, unsigned symbol_index) override;
+  modulate(span<cf_t> ouput, const resource_grid_reader& grid, unsigned port_index, unsigned symbol_index, unsigned a, unsigned b) override;
 };
 
 /// Describes a generic OFDM slot modulator.

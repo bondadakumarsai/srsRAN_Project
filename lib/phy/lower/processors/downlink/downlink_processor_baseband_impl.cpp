@@ -27,6 +27,22 @@
 #include "srsran/srsvec/compare.h"
 #include "srsran/srsvec/dot_prod.h"
 #include "srsran/srsvec/zero.h"
+#include <complex.h>
+
+// #define ROWS 1536
+// #define COLS 1
+// // no polar coding
+// int startSlot = 7000;
+// int endSlot = 9840;
+// // polar coding
+// // int startSlot = 7000;
+// // int endSlot = 8421;
+// // larger Image (no polar coding)
+// // int startSlot = 1000;
+// // int endSlot = 9341;
+
+// int flag = 1;
+
 
 using namespace srsran;
 
@@ -188,6 +204,7 @@ baseband_gateway_transmitter_metadata downlink_processor_baseband_impl::process(
         // Write the symbol into the temporary buffer.
         baseband_gateway_buffer_writer& dest_buffer = temp_buffer.write_symbol(symbol_timestamp, symbol_nof_samples);
         if (!process_new_symbol(dest_buffer, slot, i_symbol)) {
+          // printf("Hello \n");
           // If the symbol could not be processed, advance output buffer and invalidate the temporary buffer contents.
           nof_advanced_samples =
               std::min(temp_buffer.get_nof_available_samples(proc_timestamp), nof_output_samples - writing_index);
@@ -232,6 +249,57 @@ bool downlink_processor_baseband_impl::process_new_symbol(baseband_gateway_buffe
   pdxch_context.symbol = i_symbol;
 
   bool processed = pdxch_proc_baseband.process_symbol(buffer, pdxch_context);
+
+
+  baseband_gateway_buffer_writer& samples = buffer;
+  span<cf_t> output = samples.get_channel_buffer(0);
+  //printf("SFN = %d, Slot_ID = %d, sym = %d, samples = %d \n", pdxch_context.slot.sfn(),pdxch_context.slot.slot_index(),i_symbol, samples.get_nof_samples());
+
+  //int slotID = pdxch_context.slot.sfn() * 10;
+
+//     if( slotID > startSlot && slotID < endSlot)
+//     {
+//       //printf("SFN = %d, Slot_ID = %d, sym = %d, samples = %d \n", pdxch_context.slot.sfn(),pdxch_context.slot.slot_index(),i_symbol, samples.get_nof_samples());
+// /*--------------------------------------------------------------------------------------------------------------------------*/
+//     //printf("slotId = %d \n",slotId);
+//     char fullfilename[200];
+//     // Set the path appropriately
+//     sprintf(fullfilename, "/home/vm1/Desktop/txFolderBin/underlay_grid%d_%d.bin",slotID + pdxch_context.slot.slot_index(),i_symbol);
+//     //sprintf(fullfilename, "/mnt/ramdisk/txFolderBin/underlay_grid%d.bin",slotId);
+//     // sprintf(fullfilename, "/home/ric/Desktop/Chapter8/V3/PolarCoding/txFolderBin/underlay_grid%d.bin",slotId);
+//     FILE *fp = fopen(fullfilename,"rb");
+//     float *real_part = (float *) malloc(ROWS*COLS*sizeof(float));
+//     float *imag_part = (float *) malloc(ROWS*COLS*sizeof(float));
+//     int a = fread(real_part, sizeof(float), ROWS*COLS, fp);
+//     int b = fread(imag_part, sizeof(float), ROWS*COLS, fp);
+//     printf("a = %d, b = %d\n",a,b);
+//     //int c = a+b;
+//     fclose(fp);
+//     //printf("%f + %fi, %d, %d\n",crealf(real_part[0]), crealf(imag_part[0]), a , b);
+//     if(i_symbol != 0){
+//       for(int i = 0;i<1536;i++){
+//         // output[54 + i] = output[54 + i] + (crealf(real_part[i]) + I * cimagf(imag_part[i])); 
+//         //printf("z = %.4f + %.4fi, %d, %d \t",(output[108 + i].real()),(output[108 + i].imag()),a,b);
+//         output[108 + i] = output[108 + i] + std::complex<float>(crealf(real_part[i]), crealf(imag_part[i]));
+        
+//         //printf("z = %.4f + %.4fi\n",(output[108 + i].real()),(output[108 + i].imag()));
+//       }
+
+//     }
+//     else{
+//       for(int i = 0;i<1536;i++){
+//         // output[60 + i] = output[60 + i] + (crealf(real_part[i]) + I * cimagf(imag_part[i])); 
+//         output[120 + i] = output[120 + i] + std::complex<float>(crealf(real_part[i]), crealf(imag_part[i]));
+//       }
+
+//     }
+//     // // free the memory
+//     free(real_part);
+//     free(imag_part);
+
+// /*--------------------------------------------------------------------------------------------------------------------------*/ 
+//   }
+
 
   if (!processed) {
     return false;

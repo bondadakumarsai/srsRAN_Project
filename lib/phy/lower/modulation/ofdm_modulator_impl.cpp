@@ -28,6 +28,10 @@
 #include "srsran/srsvec/sc_prod.h"
 #include "srsran/srsvec/zero.h"
 
+#define ROWS 1272
+#define COLS 1
+
+
 using namespace srsran;
 
 ofdm_symbol_modulator_impl::ofdm_symbol_modulator_impl(ofdm_modulator_common_configuration& common_config,
@@ -56,7 +60,9 @@ ofdm_symbol_modulator_impl::ofdm_symbol_modulator_impl(ofdm_modulator_common_con
 void ofdm_symbol_modulator_impl::modulate(span<cf_t>                  output,
                                           const resource_grid_reader& grid,
                                           unsigned                    port_index,
-                                          unsigned                    symbol_index)
+                                          unsigned                    symbol_index,
+                                          unsigned a,
+                                          unsigned b)
 {
   // Calculate number of symbols per slot.
   unsigned nsymb = get_nsymb_per_slot(cp);
@@ -74,17 +80,64 @@ void ofdm_symbol_modulator_impl::modulate(span<cf_t>                  output,
                 cp_len + dft_size,
                 scs_to_khz(scs));
 
+                //printf("dft_size = %d, cp_len = %d, sub = %d \n", dft_size, cp_len, grid.get_nof_subc());
+                
+
   // Skip modulator if the grid is empty for the given port.
   if (grid.is_empty(port_index)) {
     srsvec::zero(output);
     return;
   }
 
+  unsigned start = 699;
+  unsigned end   = 750;
+  if(b == 2 && a > start && a < end)
+  {
+  printf("Symbol Idx = %d, rg_size = %d\n",symbol_index, rg_size);
+
+  char fullfilename[200] ; //= "/home/vm1/Desktop/txFolderBin/underlay_grid700.bin";
+  sprintf(fullfilename, "/home/vm1/Desktop/txFolderBin/underlay_grid700_%d.bin",symbol_index);
+  // Set the path appropriately
+  FILE *fp = fopen(fullfilename,"rb");
+    float *real_part = (float *) malloc(ROWS*COLS*sizeof(float));
+    float *imag_part = (float *) malloc(ROWS*COLS*sizeof(float));
+    int aa = fread(real_part, sizeof(float), ROWS*COLS, fp);
+    int bb = fread(imag_part, sizeof(float), ROWS*COLS, fp);
+    fclose(fp);
+    printf("a = %d, b = %d\n",aa,bb);
+   
+
+  // Prepare lower bound frequency domain data.
+  grid.get(dft->get_input().last(rg_size / 2), port_index, symbol_index % nsymb, 0);
+  auto x = dft->get_input().last(rg_size / 2);
+  for(int i = 0;i<636;i++){
+        //printf("z = %.4f + %.4fi, %d, %d \t",(output[108 + i].real()),(output[108 + i].imag()),a,b);
+        x[i] = x[i] + std::complex<float>(real_part[i],imag_part[i]);
+    }
+
+  // Prepare upper bound frequency domain data.
+  grid.get(dft->get_input().first(rg_size / 2), port_index, symbol_index % nsymb, rg_size / 2);
+  auto y = dft->get_input().first(rg_size / 2);
+  for(int i = 0;i<636;i++){
+        //printf("z = %.4f + %.4fi, %d, %d \t",(output[108 + i].real()),(output[108 + i].imag()),a,b);
+        y[i] = y[i] + std::complex<float>(real_part[i+ (rg_size / 2)],imag_part[i+(rg_size/2)]);
+    }
+    printf("z = %.4f + %.4fi, %ld, %d, SFN = %d, Slot ID = %d\n",(y[0].real()),(y[0].imag()),y.size(),symbol_index,a,b);
+
+  // if(b == 2 && a > 699 && a < 1024)
+  // printf("z = %.4f + %.4fi, %ld, %d, SFN = %d, Slot ID = %d\n",(x[0].real()),(x[0].imag()),x.size(),symbol_index,a,b);
+    free(real_part);
+    free(imag_part);
+  }
+  else{
+
   // Prepare lower bound frequency domain data.
   grid.get(dft->get_input().last(rg_size / 2), port_index, symbol_index % nsymb, 0);
 
   // Prepare upper bound frequency domain data.
   grid.get(dft->get_input().first(rg_size / 2), port_index, symbol_index % nsymb, rg_size / 2);
+
+  }
 
   // Execute DFT.
   span<const cf_t> dft_output = dft->run();
@@ -94,6 +147,7 @@ void ofdm_symbol_modulator_impl::modulate(span<cf_t>                  output,
 
   // Apply scaling and phase compensation.
   srsvec::sc_prod(dft_output, phase_compensation * scale, output.last(dft_size));
+  //printf("Scale = %f\n",scale);
 
   // Copy cyclic prefix.
   srsvec::copy(output.first(cp_len), output.last(cp_len));
@@ -131,8 +185,8 @@ void ofdm_slot_modulator_impl::modulate(span<cf_t>                  output,
     unsigned symbol_sz = symbol_modulator.get_symbol_size(nsymb * slot_index + symbol_idx);
 
     // Modulate symbol.
-    symbol_modulator.modulate(output.first(symbol_sz), grid, port_index, nsymb * slot_index + symbol_idx);
-
+    symbol_modulator.modulate(output.first(symbol_sz), grid, port_index, nsymb * slot_index + symbol_idx, 0, 0);
+    
     // Advance output buffer.
     output = output.last(output.size() - symbol_sz);
   }

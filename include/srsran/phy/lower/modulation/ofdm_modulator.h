@@ -70,7 +70,7 @@ public:
   /// \note The input size must be consistent with the configured bandwidth.
   /// \note The output size must be equal to the the symbol size.
   virtual void
-  modulate(span<cf_t> output, const resource_grid_reader& grid, unsigned port_index, unsigned symbol_index) = 0;
+  modulate(span<cf_t> output, const resource_grid_reader& grid, unsigned port_index, unsigned symbol_index, unsigned a, unsigned b) = 0;
 };
 
 /// \brief Describes an OFDM modulator with slot granularity.

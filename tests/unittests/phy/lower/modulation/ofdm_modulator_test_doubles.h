@@ -59,7 +59,7 @@ public:
   }
 
   void
-  modulate(span<cf_t> output, const resource_grid_reader& grid, unsigned port_index, unsigned symbol_index) override
+  modulate(span<cf_t> output, const resource_grid_reader& grid, unsigned port_index, unsigned symbol_index, unsigned a, unsigned b) override
   {
     TESTASSERT_EQ(output.size(), get_symbol_size(symbol_index));
 
