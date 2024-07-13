@@ -37,6 +37,8 @@ class io_broker;
 /// needs.
 struct common_network_gateway_config {
   std::string bind_interface;
+  /// Bind address to use for the socket. If left empty, the socket can only be used with an implicit `bind()` using
+  /// `connect()`.
   std::string bind_address;
   int         bind_port         = 0;
   bool        non_blocking_mode = false;
@@ -87,4 +89,5 @@ public:
   /// \brief Subscribe GW to IO broker for automatic notification of events.
   virtual bool subscribe_to(io_broker& broker) = 0;
 };
+
 } // namespace srsran

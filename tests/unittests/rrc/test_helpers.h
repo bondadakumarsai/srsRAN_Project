@@ -25,7 +25,6 @@
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/rrc/rrc_du.h"
 #include "srsran/rrc/rrc_ue.h"
-#include "srsran/support/async/fifo_async_task_scheduler.h"
 
 namespace srsran {
 namespace srs_cu_cp {
@@ -120,15 +119,6 @@ public:
     });
   }
 
-  async_task<void> on_ue_removal_required() override
-  {
-    logger.info("UE removal requested");
-    return launch_async([](coro_context<async_task<void>>& ctx) mutable {
-      CORO_BEGIN(ctx);
-      CORO_RETURN();
-    });
-  }
-
   async_task<void> on_ue_release_required(const cu_cp_ue_context_release_request& request) override
   {
     logger.info("ue={}: Requested a UE release", request.ue_index);
@@ -140,10 +130,27 @@ public:
     });
   }
 
-  optional<rrc_meas_cfg> on_measurement_config_request(nr_cell_id_t           nci,
-                                                       optional<rrc_meas_cfg> current_meas_config = {}) override
+  void on_up_context_setup_required(up_context ctxt) override { logger.info("UP context setup requested"); }
+
+  up_context on_up_context_required() override
   {
-    optional<rrc_meas_cfg> meas_cfg;
+    logger.info("UP context requested");
+    return up_context{};
+  }
+
+  async_task<void> on_ue_removal_required() override
+  {
+    logger.info("UE removal requested");
+    return launch_async([](coro_context<async_task<void>>& ctx) mutable {
+      CORO_BEGIN(ctx);
+      CORO_RETURN();
+    });
+  }
+
+  std::optional<rrc_meas_cfg>
+  on_measurement_config_request(nr_cell_identity nci, std::optional<rrc_meas_cfg> current_meas_config = {}) override
+  {
+    std::optional<rrc_meas_cfg> meas_cfg;
     return meas_cfg;
   }
 
@@ -159,26 +166,10 @@ private:
 class dummy_rrc_du_cu_cp_adapter : public rrc_du_measurement_config_notifier
 {
 public:
-  bool on_cell_config_update_request(nr_cell_id_t nci, const serving_cell_meas_config& serv_cell_cfg) override
+  bool on_cell_config_update_request(nr_cell_identity nci, const serving_cell_meas_config& serv_cell_cfg) override
   {
     return true;
   }
-};
-
-struct dummy_ue_task_scheduler : public rrc_ue_task_scheduler {
-public:
-  dummy_ue_task_scheduler(timer_manager& timers_, task_executor& exec_) : timer_db(timers_), exec(exec_) {}
-  void           schedule_async_task(async_task<void> task) override { ctrl_loop.schedule(std::move(task)); }
-  unique_timer   make_unique_timer() override { return timer_db.create_unique_timer(exec); }
-  timer_factory  get_timer_factory() override { return timer_factory{timer_db, exec}; }
-  task_executor& get_executor() override { return exec; }
-
-  void tick_timer() { timer_db.tick(); }
-
-private:
-  fifo_async_task_scheduler ctrl_loop{16};
-  timer_manager&            timer_db;
-  task_executor&            exec;
 };
 
 } // namespace srs_cu_cp

@@ -22,6 +22,7 @@
 
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/detail/byte_buffer_segment_pool.h"
+#include "srsran/srslog/srslog.h"
 #include "srsran/support/memory_pool/linear_memory_allocator.h"
 
 using namespace srsran;
@@ -126,7 +127,7 @@ expected<byte_buffer> byte_buffer::deep_copy() const
   byte_buffer buf;
   for (node_t* seg = ctrl_blk_ptr->segments.head; seg != nullptr; seg = seg->next) {
     if (not buf.append(span<uint8_t>{seg->data(), seg->length()})) {
-      return default_error_t{};
+      return make_unexpected(default_error_t{});
     }
   }
   return buf;
@@ -580,17 +581,25 @@ void byte_buffer::warn_alloc_failure()
   logger.warning("POOL: Failure to allocate byte buffer segment");
 }
 
-byte_buffer srsran::make_byte_buffer(const std::string& hex_str)
+expected<byte_buffer> srsran::make_byte_buffer(const std::string& hex_str)
 {
-  srsran_assert(hex_str.size() % 2 == 0, "The number of hex digits must be even");
+  if (hex_str.size() % 2 != 0) {
+    // Failed to parse hex string.
+    return make_unexpected(default_error_t{});
+  }
 
   byte_buffer ret{byte_buffer::fallback_allocation_tag{}};
   for (size_t i = 0, e = hex_str.size(); i != e; i += 2) {
     uint8_t val;
-    std::sscanf(hex_str.data() + i, "%02hhX", &val);
+    if (std::sscanf(hex_str.data() + i, "%02hhX", &val) <= 0) {
+      // Failed to parse Hex digit.
+      return make_unexpected(default_error_t{});
+    }
     bool success = ret.append(val);
-    srsran_sanity_check(success, "Failed to append byte to byte_buffer with fallback allocator");
-    (void)success;
+    if (not success) {
+      // Note: This shouldn't generally happen as we use a fallback allocator.
+      return make_unexpected(default_error_t{});
+    }
   }
   return ret;
 }

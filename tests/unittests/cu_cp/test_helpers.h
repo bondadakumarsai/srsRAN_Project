@@ -22,23 +22,18 @@
 
 #pragma once
 
-#include "cu_cp_test_messages.h"
-#include "du_processor_test_messages.h"
 #include "lib/cu_cp/cu_cp_controller/node_connection_notifier.h"
 #include "lib/cu_cp/cu_cp_impl_interface.h"
 #include "lib/cu_cp/cu_up_processor/cu_up_processor_impl_interface.h"
 #include "lib/cu_cp/du_processor/du_processor.h"
 #include "lib/cu_cp/ue_manager/ue_manager_impl.h"
-#include "tests/unittests/ngap/ngap_test_helpers.h"
-#include "srsran/adt/variant.h"
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/support/async/async_task.h"
-#include "srsran/support/async/async_test_utils.h"
 #include "srsran/support/async/fifo_async_task_scheduler.h"
-#include "srsran/support/test_utils.h"
 #include <cstdint>
 #include <list>
 #include <memory>
+#include <variant>
 
 namespace srsran {
 namespace srs_cu_cp {
@@ -48,28 +43,6 @@ byte_buffer generate_container_with_cell_group_config();
 
 /// \brief Generate RRC Container with RRC Setup Complete message.
 byte_buffer generate_rrc_setup_complete();
-
-struct dummy_du_processor_ue_task_scheduler : public du_processor_ue_task_scheduler {
-public:
-  dummy_du_processor_ue_task_scheduler(timer_manager& timers_, task_executor& exec_) : timer_db(timers_), exec(exec_) {}
-
-  void schedule_async_task(ue_index_t ue_index, async_task<void> task) override { ctrl_loop.schedule(std::move(task)); }
-
-  void clear_pending_tasks(ue_index_t ue_index) override { ctrl_loop.clear_pending_tasks(); }
-
-  size_t get_nof_pending_tasks() { return ctrl_loop.nof_pending_tasks(); }
-
-  unique_timer make_unique_timer() override { return timer_db.create_unique_timer(exec); }
-
-  timer_manager& get_timer_manager() override { return timer_db; }
-
-  void tick_timer() { timer_db.tick(); }
-
-private:
-  fifo_async_task_scheduler ctrl_loop{16};
-  timer_manager&            timer_db;
-  task_executor&            exec;
-};
 
 struct dummy_du_processor_cu_cp_notifier : public du_processor_cu_cp_notifier {
 public:
@@ -108,27 +81,26 @@ public:
 
   byte_buffer on_target_cell_sib1_required(du_index_t du_index, nr_cell_global_id_t cgi) override
   {
-    return make_byte_buffer("deadbeef");
+    return make_byte_buffer("deadbeef").value();
   }
 
   async_task<void> on_ue_removal_required(ue_index_t ue_index) override
   {
     logger.info("ue={}: Received a UE removal request", ue_index);
 
-    if (ue_removal_handler != nullptr) {
-      ue_removal_handler->handle_ue_removal_request(ue_index);
-    } else {
-      if (ue_mng != nullptr) {
-        ue_mng->remove_ue(ue_index);
-      }
-
-      if (rrc_removal_handler != nullptr) {
-        rrc_removal_handler->remove_ue(ue_index);
-      }
-    }
-
-    return launch_async([](coro_context<async_task<void>>& ctx) mutable {
+    return launch_async([this, ue_index](coro_context<async_task<void>>& ctx) mutable {
       CORO_BEGIN(ctx);
+      if (ue_removal_handler != nullptr) {
+        ue_removal_handler->handle_ue_removal_request(ue_index);
+      } else {
+        if (ue_mng != nullptr) {
+          ue_mng->remove_ue(ue_index);
+        }
+
+        if (rrc_removal_handler != nullptr) {
+          rrc_removal_handler->remove_ue(ue_index);
+        }
+      }
       CORO_RETURN();
     });
   }
@@ -137,6 +109,14 @@ public:
   {
     logger.info("ue={}: Received UE release request", request.ue_index);
 
+    return launch_async([](coro_context<async_task<void>>& ctx) mutable {
+      CORO_BEGIN(ctx);
+      CORO_RETURN();
+    });
+  }
+
+  async_task<void> on_transaction_info_loss(const f1_ue_transaction_info_loss_event& ev) override
+  {
     return launch_async([](coro_context<async_task<void>>& ctx) mutable {
       CORO_BEGIN(ctx);
       CORO_RETURN();
@@ -215,6 +195,8 @@ public:
     });
   }
 
+  void handle_pending_ue_task_cancellation(ue_index_t ue_index) override {}
+
 private:
   ue_manager* ue_mng = nullptr;
 };
@@ -222,7 +204,7 @@ private:
 class dummy_du_connection_notifier : public du_connection_notifier
 {
 public:
-  bool on_du_setup_request(const du_setup_request& req) override { return true; }
+  bool on_du_setup_request(du_index_t du_index, const du_setup_request& req) override { return true; }
 };
 
 struct dummy_ngap_ue_context_removal_handler : public ngap_ue_context_removal_handler {
@@ -413,13 +395,14 @@ public:
     second_e1ap_request.reset();
   }
 
-  optional<variant<e1ap_bearer_context_setup_request, e1ap_bearer_context_modification_request>> first_e1ap_request;
-  optional<e1ap_bearer_context_modification_request>                                             second_e1ap_request;
+  std::optional<std::variant<e1ap_bearer_context_setup_request, e1ap_bearer_context_modification_request>>
+                                                          first_e1ap_request;
+  std::optional<e1ap_bearer_context_modification_request> second_e1ap_request;
 
 private:
-  srslog::basic_logger&              logger = srslog::fetch_basic_logger("TEST");
-  optional<bearer_context_outcome_t> first_e1ap_response;
-  optional<bearer_context_outcome_t> second_e1ap_response;
+  srslog::basic_logger&                   logger = srslog::fetch_basic_logger("TEST");
+  std::optional<bearer_context_outcome_t> first_e1ap_response;
+  std::optional<bearer_context_outcome_t> second_e1ap_response;
 };
 
 struct dummy_ngap_control_message_handler : public ngap_control_message_handler {
@@ -474,8 +457,8 @@ public:
   void set_ue_context_modification_outcome(ue_context_outcome_t outcome) { ue_context_modification_outcome = outcome; }
 
   async_task<f1ap_ue_context_setup_response>
-  handle_ue_context_setup_request(const f1ap_ue_context_setup_request& request,
-                                  optional<rrc_ue_transfer_context>    rrc_context) override
+  handle_ue_context_setup_request(const f1ap_ue_context_setup_request&   request,
+                                  std::optional<rrc_ue_transfer_context> rrc_context) override
   {
     logger.info("Received a new UE context setup request");
 
@@ -484,7 +467,7 @@ public:
       CORO_BEGIN(ctx);
 
       res.success                          = ue_context_setup_outcome;
-      res.du_to_cu_rrc_info.cell_group_cfg = make_byte_buffer("5800b24223c853a0120c7c080408c008");
+      res.du_to_cu_rrc_info.cell_group_cfg = make_byte_buffer("5800b24223c853a0120c7c080408c008").value();
 
       CORO_RETURN(res);
     });
@@ -509,7 +492,7 @@ public:
         drb_item.drb_id = uint_to_drb_id(drb_id); // set ID
         res.drbs_setup_mod_list.emplace(drb_item.drb_id, drb_item);
       }
-      res.du_to_cu_rrc_info.cell_group_cfg = make_byte_buffer("5800b24223c853a0120c7c080408c008");
+      res.du_to_cu_rrc_info.cell_group_cfg = make_byte_buffer("5800b24223c853a0120c7c080408c008").value();
       // TODO: add failed list and other fields here ..
 
       CORO_RETURN(res);
@@ -601,21 +584,15 @@ public:
     return release_context;
   }
 
-  optional<rrc_meas_cfg> generate_meas_config(optional<rrc_meas_cfg> current_meas_config = {}) override
+  std::optional<rrc_meas_cfg> generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config = {}) override
   {
-    optional<rrc_meas_cfg> meas_config;
+    std::optional<rrc_meas_cfg> meas_config;
     return meas_config;
   }
 
   rrc_ue_transfer_context get_transfer_context() override { return rrc_ue_transfer_context{}; }
 
   byte_buffer get_packed_handover_preparation_message() override { return byte_buffer{}; }
-
-  bool on_new_security_context(const security::security_context& sec_context) override
-  {
-    logger.info("Received a new security context.");
-    return true;
-  }
 
   byte_buffer on_new_rrc_handover_command(byte_buffer cmd) override { return byte_buffer{}; }
 
@@ -626,7 +603,7 @@ public:
     return byte_buffer{};
   }
 
-  optional<rrc_radio_bearer_config> last_radio_bearer_cfg;
+  std::optional<rrc_radio_bearer_config> last_radio_bearer_cfg;
 
   void reset() { last_radio_bearer_cfg.reset(); }
 
@@ -667,8 +644,7 @@ public:
     return true;
   }
 
-  rrc_ue_interface* on_ue_creation_request(up_resource_manager&           up_resource_mng,
-                                           const rrc_ue_creation_message& msg) override
+  rrc_ue_interface* on_ue_creation_request(const rrc_ue_creation_message& msg) override
   {
     logger.info("Received a UE creation request");
     return nullptr;
@@ -699,5 +675,20 @@ private:
   srslog::basic_logger& logger = srslog::fetch_basic_logger("TEST");
 };
 
+struct dummy_ue_task_scheduler : public ue_task_scheduler {
+public:
+  dummy_ue_task_scheduler(timer_manager& timers_, task_executor& exec_) : timer_db(timers_), exec(exec_) {}
+  bool           schedule_async_task(async_task<void> task) override { return ctrl_loop.schedule(std::move(task)); }
+  unique_timer   create_timer() override { return timer_db.create_unique_timer(exec); }
+  timer_factory  get_timer_factory() override { return timer_factory{timer_db, exec}; }
+  task_executor& get_executor() override { return exec; }
+
+  void tick_timer() { timer_db.tick(); }
+
+private:
+  fifo_async_task_scheduler ctrl_loop{16};
+  timer_manager&            timer_db;
+  task_executor&            exec;
+};
 } // namespace srs_cu_cp
 } // namespace srsran

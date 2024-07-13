@@ -63,6 +63,11 @@ public:
 
   harq_entity harqs;
 
+  // Slot at which PDSCH was allocated in the past for this UE in this cell.
+  slot_point last_pdsch_allocated_slot;
+  // Slot at which PUSCH was allocated in the past for this UE in this cell.
+  slot_point last_pusch_allocated_slot;
+
   rnti_t rnti() const { return crnti_; }
 
   bwp_id_t active_bwp_id() const { return to_bwp_id(0); }
@@ -79,10 +84,10 @@ public:
 
   void set_fallback_state(bool in_fallback);
 
-  optional<dl_harq_process::dl_ack_info_result> handle_dl_ack_info(slot_point                 uci_slot,
-                                                                   mac_harq_ack_report_status ack_value,
-                                                                   unsigned                   harq_bit_idx,
-                                                                   optional<float>            pucch_snr);
+  std::optional<dl_harq_process::dl_ack_info_result> handle_dl_ack_info(slot_point                 uci_slot,
+                                                                        mac_harq_ack_report_status ack_value,
+                                                                        unsigned                   harq_bit_idx,
+                                                                        std::optional<float>       pucch_snr);
 
   /// \brief Estimate the number of required DL PRBs to allocate the given number of bytes.
   grant_prbs_mcs required_dl_prbs(const pdsch_time_domain_resource_allocation& pdsch_td_cfg,
@@ -124,11 +129,11 @@ public:
   /// \param[in] required_dci_rnti_type Optional parameter to filter Search Spaces by DCI RNTI config type.
   /// \return List of SearchSpace configuration.
   static_vector<const search_space_info*, MAX_NOF_SEARCH_SPACE_PER_BWP>
-  get_active_dl_search_spaces(slot_point                        pdcch_slot,
-                              optional<dci_dl_rnti_config_type> required_dci_rnti_type = {}) const;
+  get_active_dl_search_spaces(slot_point                             pdcch_slot,
+                              std::optional<dci_dl_rnti_config_type> required_dci_rnti_type = {}) const;
   static_vector<const search_space_info*, MAX_NOF_SEARCH_SPACE_PER_BWP>
-  get_active_ul_search_spaces(slot_point                        pdcch_slot,
-                              optional<dci_ul_rnti_config_type> required_dci_rnti_type = {}) const;
+  get_active_ul_search_spaces(slot_point                             pdcch_slot,
+                              std::optional<dci_ul_rnti_config_type> required_dci_rnti_type = {}) const;
 
   /// \brief Defines the fallback state of the ue_cell.
   /// Transitions can be fallback => sr_csi_received => normal => fallback. The fallback => sr_csi_received transition
@@ -142,10 +147,10 @@ public:
 
   const ue_link_adaptation_controller& link_adaptation_controller() const { return ue_mcs_calculator; }
 
-  /// \brief Returns an estimated DL bitrate in kbps (kilo bits per second) based on the given input parameters.
-  double get_estimated_dl_brate_kbps(const pdsch_config_params& pdsch_cfg, sch_mcs_index mcs, unsigned nof_prbs) const;
-  /// \brief Returns an estimated UL bitrate in kbps (kilo bits per second) based on the given input parameters.
-  double get_estimated_ul_brate_kbps(const pusch_config_params& pusch_cfg, sch_mcs_index mcs, unsigned nof_prbs) const;
+  /// \brief Returns an estimated DL rate in bytes per slot based on the given input parameters.
+  double get_estimated_dl_rate(const pdsch_config_params& pdsch_cfg, sch_mcs_index mcs, unsigned nof_prbs) const;
+  /// \brief Returns an estimated UL rate in bytes per slot based on the given input parameters.
+  double get_estimated_ul_rate(const pusch_config_params& pusch_cfg, sch_mcs_index mcs, unsigned nof_prbs) const;
 
 private:
   /// \brief Performs link adaptation procedures such as cancelling HARQs etc.

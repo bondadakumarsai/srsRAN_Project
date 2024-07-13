@@ -206,7 +206,7 @@ public:
   {
     byte_buffer buf;
     if (not buf.append(bytes)) {
-      return default_error_t{};
+      return make_unexpected(default_error_t{});
     }
     return buf;
   }
@@ -223,7 +223,7 @@ public:
   {
     byte_buffer buf;
     if (not buf.append(other_begin, other_end)) {
-      return default_error_t{};
+      return make_unexpected(default_error_t{});
     }
     return buf;
   }
@@ -440,7 +440,7 @@ public:
   {
     auto buf = byte_buffer::create(bytes);
     if (not buf) {
-      return default_error_t{};
+      return make_unexpected(default_error_t{});
     }
     return byte_buffer_slice(std::move(buf.value()));
   }
@@ -450,7 +450,7 @@ public:
   {
     auto buf = byte_buffer::create(bytes);
     if (not buf) {
-      return default_error_t{};
+      return make_unexpected(default_error_t{});
     }
     return byte_buffer_slice(std::move(buf.value()));
   }
@@ -635,7 +635,7 @@ private:
 };
 
 /// Converts a string of hexadecimal digits (e.g. "01FA02") to a byte buffer.
-byte_buffer make_byte_buffer(const std::string& hex_str);
+expected<byte_buffer> make_byte_buffer(const std::string& hex_str);
 
 /// Performs a segment-wise copy of the byte_buffer into a span<uint8_t> object.
 /// The length is limited by the length of src and dst, whichever is smaller.

@@ -23,6 +23,8 @@
 #pragma once
 
 #include "../du_processor/du_processor.h"
+#include "../up_resource_manager/up_resource_manager_impl.h"
+#include "srsran/cu_cp/ue_task_scheduler.h"
 #include "srsran/e1ap/cu_cp/e1ap_cu_cp.h"
 #include "srsran/ngap/ngap.h"
 #include "srsran/support/async/async_task.h"
@@ -40,10 +42,9 @@ public:
                                        f1ap_ue_context_manager&                          f1ap_ue_ctxt_mng_,
                                        ngap_control_message_handler&                     ngap_handler_,
                                        du_processor_rrc_ue_control_message_notifier&     rrc_ue_notifier_,
-                                       du_processor_ue_task_scheduler&                   task_sched_,
-
-                                       up_resource_manager&  rrc_ue_up_resource_manager_,
-                                       srslog::basic_logger& logger_);
+                                       ue_task_scheduler&                                task_sched_,
+                                       up_resource_manager&                              up_resource_mng_,
+                                       srslog::basic_logger&                             logger_);
 
   void operator()(coro_context<async_task<cu_cp_pdu_session_resource_release_response>>& ctx);
 
@@ -63,8 +64,8 @@ private:
   f1ap_ue_context_manager&                      f1ap_ue_ctxt_mng;     // to trigger UE context modification at DU
   ngap_control_message_handler&                 ngap_handler;         // to request UE release
   du_processor_rrc_ue_control_message_notifier& rrc_ue_notifier;      // to trigger RRC Reconfiguration at UE
-  du_processor_ue_task_scheduler&               task_sched;           // to schedule UE release request (over NGAP)
-  up_resource_manager&                          rrc_ue_up_resource_manager; // to get RRC DRB config
+  ue_task_scheduler&                            task_sched;           // to schedule UE release request (over NGAP)
+  up_resource_manager&                          up_resource_mng;      // to get RRC DRB config
   srslog::basic_logger&                         logger;
 
   // (sub-)routine requests

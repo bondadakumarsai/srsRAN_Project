@@ -81,6 +81,7 @@ public:
   void             handle_handover_ue_context_push(ue_index_t source_ue_index, ue_index_t target_ue_index) override;
 
   // cu_cp_ngap_handler
+  bool handle_handover_request(ue_index_t ue_index, security::security_context sec_ctxt) override;
   async_task<cu_cp_pdu_session_resource_setup_response>
   handle_new_pdu_session_resource_setup_request(cu_cp_pdu_session_resource_setup_request& request) override;
   async_task<cu_cp_pdu_session_resource_modify_response>
@@ -92,15 +93,18 @@ public:
   async_task<ngap_handover_resource_allocation_response>
                    handle_ngap_handover_request(const ngap_handover_request& request) override;
   async_task<bool> handle_new_handover_command(ue_index_t ue_index, byte_buffer command) override;
+  ue_index_t       handle_ue_index_allocation_request(const nr_cell_global_id_t& cgi) override;
+  void             handle_n2_disconnection() override;
 
   // cu_cp_measurement_handler
-  optional<rrc_meas_cfg> handle_measurement_config_request(ue_index_t             ue_index,
-                                                           nr_cell_id_t           nci,
-                                                           optional<rrc_meas_cfg> current_meas_config = {}) override;
+  std::optional<rrc_meas_cfg>
+       handle_measurement_config_request(ue_index_t                  ue_index,
+                                         nr_cell_identity            nci,
+                                         std::optional<rrc_meas_cfg> current_meas_config = {}) override;
   void handle_measurement_report(const ue_index_t ue_index, const rrc_meas_results& meas_results) override;
 
   // cu_cp_measurement_config_handler
-  bool handle_cell_config_update_request(nr_cell_id_t nci, const serving_cell_meas_config& serv_cell_cfg) override;
+  bool handle_cell_config_update_request(nr_cell_identity nci, const serving_cell_meas_config& serv_cell_cfg) override;
 
   // cu_cp_mobility_manager_handler
   async_task<cu_cp_inter_du_handover_response>
@@ -110,12 +114,13 @@ public:
 
   // cu_cp_ue_removal_handler
   async_task<void> handle_ue_removal_request(ue_index_t ue_index) override;
+  void             handle_pending_ue_task_cancellation(ue_index_t ue_index) override;
 
   cu_cp_mobility_command_handler& get_mobility_command_handler() override { return *mobility_mng; }
   metrics_handler&                get_metrics_handler() override { return *metrics_hdlr; }
 
   // cu_cp public interface
-  cu_cp_f1c_handler&                     get_f1c_handler() override { return du_db; }
+  cu_cp_f1c_handler&                     get_f1c_handler() override { return controller->get_f1c_handler(); }
   cu_cp_e1_handler&                      get_e1_handler() override { return cu_up_db; }
   cu_cp_e1ap_event_handler&              get_cu_cp_e1ap_handler() override { return *this; }
   cu_cp_ng_handler&                      get_ng_handler() override { return *this; }
@@ -134,13 +139,19 @@ private:
                                     f1ap_statistics_handler&         f1ap_statistic_handler,
                                     rrc_ue_handler&                  rrc_handler,
                                     rrc_du_statistics_handler&       rrc_statistic_handler) override;
+  void handle_du_processor_removal(du_index_t du_index) override;
 
   void handle_rrc_ue_creation(ue_index_t ue_index, rrc_ue_interface& rrc_ue) override;
 
   byte_buffer handle_target_cell_sib1_required(du_index_t du_index, nr_cell_global_id_t cgi) override;
 
+  async_task<void> handle_transaction_info_loss(const f1_ue_transaction_info_loss_event& ev) override;
+
   // NGAP UE creation handler
-  bool handle_new_ngap_ue(ue_index_t ue_index) override;
+  ngap_cu_cp_ue_notifier* handle_new_ngap_ue(ue_index_t ue_index) override;
+
+  // cu_cp_task_scheduler_handler
+  bool schedule_ue_task(ue_index_t ue_index, async_task<void> task) override;
 
   void on_statistics_report_timer_expired();
 
@@ -163,9 +174,6 @@ private:
   // CU-CP to RRC DU adapters
   std::map<du_index_t, cu_cp_rrc_du_adapter> rrc_du_adapters;
 
-  // UE Task scheduler used by DU processors.
-  du_processor_to_cu_cp_task_scheduler du_processor_task_sched;
-
   // DU repository to Node Manager adapter.
   du_processor_cu_cp_connection_adapter conn_notifier;
 
@@ -176,8 +184,7 @@ private:
   e1ap_cu_cp_adapter e1ap_ev_notifier;
 
   // NGAP to CU-CP adapters
-  ngap_to_cu_cp_task_scheduler ngap_task_sched;
-  ngap_cu_cp_adapter           ngap_cu_cp_ev_notifier;
+  ngap_cu_cp_adapter ngap_cu_cp_ev_notifier;
 
   // Mobility manager to CU-CP adapter
   mobility_manager_adapter mobility_manager_ev_notifier;

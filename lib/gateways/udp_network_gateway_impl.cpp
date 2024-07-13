@@ -24,7 +24,7 @@
 #include "srsran/adt/span.h"
 #include "srsran/gateways/addr_info.h"
 #include "srsran/srslog/srslog.h"
-#include "srsran/support/sockets.h"
+#include "srsran/support/io/sockets.h"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <sys/socket.h>
@@ -257,7 +257,7 @@ int udp_network_gateway_impl::get_socket_fd()
   return sock_fd.value();
 }
 
-optional<uint16_t> udp_network_gateway_impl::get_bind_port()
+std::optional<uint16_t> udp_network_gateway_impl::get_bind_port()
 {
   if (not sock_fd.is_open()) {
     logger.error("Socket of UDP network gateway not initialized.");

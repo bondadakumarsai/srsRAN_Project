@@ -36,9 +36,9 @@ struct f1ap_ue_context {
   f1ap_rrc_message_notifier* rrc_notifier       = nullptr;
   bool                       marked_for_release = false;
   /// Whether the old gNB-DU UE F1AP UE ID IE needs to be notified back to the DU, due to reestablishment.
-  optional<gnb_du_ue_f1ap_id_t> pending_old_ue_id;
-  f1ap_ue_transaction_manager   ev_mng;
-  f1ap_ue_logger                logger;
+  std::optional<gnb_du_ue_f1ap_id_t> pending_old_ue_id;
+  f1ap_ue_transaction_manager        ev_mng;
+  f1ap_ue_logger                     logger;
 
   f1ap_ue_context(ue_index_t ue_index_, gnb_cu_ue_f1ap_id_t cu_ue_f1ap_id_, timer_factory timers_) :
     ue_ids({ue_index_, cu_ue_f1ap_id_}), ev_mng(timers_), logger("CU-CP-F1", {ue_ids}, ": ")
@@ -171,10 +171,10 @@ public:
   size_t size() const { return ues.size(); }
 
   /// \brief Get the next available GNB-CU-F1AP-UE-ID.
-  gnb_cu_ue_f1ap_id_t next_gnb_cu_ue_f1ap_id()
+  gnb_cu_ue_f1ap_id_t allocate_gnb_cu_ue_f1ap_id()
   {
     // return invalid when no cu ue f1ap id is available
-    if (ue_index_to_ue_f1ap_id.size() == MAX_NOF_UES_PER_DU) {
+    if (ue_index_to_ue_f1ap_id.size() == MAX_NOF_CU_F1AP_UES) {
       return gnb_cu_ue_f1ap_id_t::invalid;
     }
 
@@ -189,8 +189,7 @@ public:
     // Find holes in the allocated IDs by iterating over all ids starting with the next_cu_ue_f1ap_id to find the
     // available id
     while (true) {
-      // Only iterate over ue_index_to_ue_f1ap_id (size=MAX_NOF_UES_PER_DU)
-      // to avoid iterating over all possible values of gnb_cu_ue_f1ap_id_t (size=2^32-1)
+      // Iterate over ue_index_to_ue_f1ap_id
       auto it = std::find_if(ue_index_to_ue_f1ap_id.begin(), ue_index_to_ue_f1ap_id.end(), [this](auto& u) {
         return u.second == next_cu_ue_f1ap_id;
       });
@@ -209,6 +208,11 @@ public:
 
     return gnb_cu_ue_f1ap_id_t::invalid;
   }
+
+  std::unordered_map<gnb_cu_ue_f1ap_id_t, f1ap_ue_context>::iterator       begin() { return ues.begin(); }
+  std::unordered_map<gnb_cu_ue_f1ap_id_t, f1ap_ue_context>::const_iterator begin() const { return ues.begin(); }
+  std::unordered_map<gnb_cu_ue_f1ap_id_t, f1ap_ue_context>::iterator       end() { return ues.end(); }
+  std::unordered_map<gnb_cu_ue_f1ap_id_t, f1ap_ue_context>::const_iterator end() const { return ues.end(); }
 
 protected:
   gnb_cu_ue_f1ap_id_t next_cu_ue_f1ap_id = gnb_cu_ue_f1ap_id_t::min;

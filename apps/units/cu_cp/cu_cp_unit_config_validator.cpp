@@ -24,7 +24,6 @@
 #include "srsran/adt/span.h"
 #include "srsran/pdcp/pdcp_t_reordering.h"
 #include "srsran/ran/nr_cgi.h"
-#include "srsran/ran/nr_cgi_helpers.h"
 #include "srsran/rlc/rlc_config.h"
 #include <map>
 #include <set>
@@ -32,7 +31,7 @@
 
 using namespace srsran;
 
-static bool validate_mobility_appconfig(const gnb_id_t gnb_id, const cu_cp_unit_mobility_config& config)
+static bool validate_mobility_appconfig(gnb_id_t gnb_id, const cu_cp_unit_mobility_config& config)
 {
   // check that report config ids are unique
   std::map<unsigned, std::string> report_cfg_ids_to_report_type;
@@ -44,13 +43,14 @@ static bool validate_mobility_appconfig(const gnb_id_t gnb_id, const cu_cp_unit_
     report_cfg_ids_to_report_type.emplace(report_cfg.report_cfg_id, report_cfg.report_type);
   }
 
-  std::map<nr_cell_id_t, std::set<unsigned>> cell_to_report_cfg_id;
+  std::map<nr_cell_identity, std::set<unsigned>> cell_to_report_cfg_id;
 
   // check cu_cp_cell_config
+  std::set<nr_cell_identity> ncis;
   for (const auto& cell : config.cells) {
-    std::set<nr_cell_id_t> ncis;
-    if (!ncis.emplace(cell.nr_cell_id).second) {
-      fmt::print("Cells must be unique ({:#x} already present)\n");
+    nr_cell_identity nci = nr_cell_identity::create(cell.nr_cell_id).value();
+    if (!ncis.emplace(nci).second) {
+      fmt::print("Cells must be unique ({:#x} already present)\n", cell.nr_cell_id);
       return false;
     }
 
@@ -62,8 +62,8 @@ static bool validate_mobility_appconfig(const gnb_id_t gnb_id, const cu_cp_unit_
 
     if (cell.periodic_report_cfg_id.has_value()) {
       // try to add report config id to cell_to_report_cfg_id map
-      cell_to_report_cfg_id.emplace(cell.nr_cell_id, std::set<unsigned>());
-      auto& report_cfg_ids = cell_to_report_cfg_id.at(cell.nr_cell_id);
+      cell_to_report_cfg_id.emplace(nci, std::set<unsigned>());
+      auto& report_cfg_ids = cell_to_report_cfg_id.at(nci);
       if (!report_cfg_ids.emplace(cell.periodic_report_cfg_id.value()).second) {
         fmt::print("cell={}: report_config_id={} already configured for this cell)\n",
                    cell.nr_cell_id,
@@ -78,11 +78,11 @@ static bool validate_mobility_appconfig(const gnb_id_t gnb_id, const cu_cp_unit_
     }
 
     // check if cell is an external managed cell
-    if (config_helpers::get_gnb_id(cell.nr_cell_id, gnb_id.bit_length) != gnb_id) {
+    if (nci.gnb_id(gnb_id.bit_length) != gnb_id) {
       if (!cell.gnb_id_bit_length.has_value() || !cell.pci.has_value() || !cell.band.has_value() ||
           !cell.ssb_arfcn.has_value() || !cell.ssb_scs.has_value() || !cell.ssb_period.has_value() ||
           !cell.ssb_offset.has_value() || !cell.ssb_duration.has_value()) {
-        fmt::print("cell={:#x}: For external cells, the gnb_id_bit_length, pci, band, ssb_argcn, ssb_scs, ssb_period, "
+        fmt::print("cell={:#x}: For external cells, the gnb_id_bit_length, pci, band, ssb_arfcn, ssb_scs, ssb_period, "
                    "ssb_offset and "
                    "ssb_duration must be configured in the mobility config\n",
                    cell.nr_cell_id);
@@ -91,7 +91,7 @@ static bool validate_mobility_appconfig(const gnb_id_t gnb_id, const cu_cp_unit_
     } else {
       if (cell.pci.has_value() || cell.band.has_value() || cell.ssb_arfcn.has_value() || cell.ssb_scs.has_value() ||
           cell.ssb_period.has_value() || cell.ssb_offset.has_value() || cell.ssb_duration.has_value()) {
-        fmt::print("cell={:#x}: For cells managed by the CU-CP the gnb_id_bit_length, pci, band, ssb_argcn, ssb_scs, "
+        fmt::print("cell={:#x}: For cells managed by the CU-CP the gnb_id_bit_length, pci, band, ssb_arfcn, ssb_scs, "
                    "ssb_period, "
                    "ssb_offset and "
                    "ssb_duration must not be configured in the mobility config\n",
@@ -104,11 +104,24 @@ static bool validate_mobility_appconfig(const gnb_id_t gnb_id, const cu_cp_unit_
     for (const auto& ncell : cell.ncells) {
       // try to add report config ids to cell_to_report_cfg_id map
       for (const auto& id : ncell.report_cfg_ids) {
-        if (cell_to_report_cfg_id.find(ncell.nr_cell_id) != cell_to_report_cfg_id.end() &&
-            !cell_to_report_cfg_id.at(ncell.nr_cell_id).emplace(id).second) {
+        if (cell_to_report_cfg_id.find(nci) != cell_to_report_cfg_id.end() &&
+            !cell_to_report_cfg_id.at(nci).emplace(id).second) {
           fmt::print("cell={}: report_config_id={} already configured for this cell\n", ncell.nr_cell_id, id);
           return false;
         }
+      }
+    }
+  }
+
+  // verify that each configured neighbor cell is present
+  for (const auto& cell : config.cells) {
+    nr_cell_identity nci = nr_cell_identity::create(cell.nr_cell_id).value();
+    for (const auto& ncell : cell.ncells) {
+      if (ncis.find(nci) == ncis.end()) {
+        fmt::print("Neighbor cell config for nci={:#x} incomplete. No valid configuration for cell nci={:#x} found.\n",
+                   cell.nr_cell_id,
+                   ncell.nr_cell_id);
+        return false;
       }
     }
   }
@@ -396,9 +409,23 @@ static bool validate_qos_appconfig(span<const cu_cp_unit_qos_config> config)
   return true;
 }
 
+/// Validates the given AMF configuration. Returns true on success, otherwise false.
+static bool validate_amf_appconfig(const cu_cp_unit_amf_config& config)
+{
+  // only check for non-empty AMF address and default port
+  if (config.ip_addr.empty() or config.port != 38412) {
+    return false;
+  }
+  return true;
+}
+
 /// Validates the given CU-CP configuration. Returns true on success, otherwise false.
 static bool validate_cu_cp_appconfig(const gnb_id_t gnb_id, const cu_cp_unit_config& config)
 {
+  if (!validate_amf_appconfig(config.amf_cfg)) {
+    return false;
+  }
+
   // validate mobility config
   if (!validate_mobility_appconfig(gnb_id, config.mobility_config)) {
     return false;
@@ -409,6 +436,12 @@ static bool validate_cu_cp_appconfig(const gnb_id_t gnb_id, const cu_cp_unit_con
   }
 
   if (!validate_qos_appconfig(config.qos_cfg)) {
+    return false;
+  }
+
+  if (config.plmns.size() != config.tacs.size()) {
+    fmt::print("Number of PLMNs '{}' do not match the number of TACs '{}'\n", config.plmns.size(), config.tacs.size());
+
     return false;
   }
 

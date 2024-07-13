@@ -72,7 +72,7 @@ void inter_cu_handover_target_routine::operator()(
 
   logger.debug("ue={}: \"{}\" initialized", request.ue_index, name());
 
-  ue = ue_mng.find_ue(request.ue_index);
+  ue = ue_mng.find_du_ue(request.ue_index);
 
   // Perform initial sanity checks on incoming message.
   if (!ue->get_up_resource_manager().validate_request(request.pdu_session_res_setup_list_ho_req)) {
@@ -87,14 +87,12 @@ void inter_cu_handover_target_routine::operator()(
 
   // Prepare E1AP Bearer Context Setup Request and call E1AP notifier
   {
-    // Generate security keys for Bearer Context Setup Request (RRC UE is not created yet)
-    security_cfg = generate_security_keys(rrc_context.sec_context);
-    if (!security_cfg.has_value()) {
-      logger.warning("ue={}: \"{}\" failed to generate security keys", request.ue_index, name());
+    // Get security keys for Bearer Context Setup Request (RRC UE is not created yet)
+    if (!ue->get_security_manager().is_security_context_initialized()) {
+      logger.warning("ue={}: \"{}\" failed. Cause: Security context not initialized", request.ue_index, name());
       CORO_EARLY_RETURN(generate_handover_resource_allocation_response(false));
     }
-
-    if (!fill_e1ap_bearer_context_setup_request(security_cfg.value())) {
+    if (!fill_e1ap_bearer_context_setup_request(ue->get_security_manager().get_up_as_config())) {
       logger.warning("ue={}: \"{}\" failed to fill context at CU-UP", request.ue_index, name());
       CORO_EARLY_RETURN(generate_handover_resource_allocation_response(false));
     }
@@ -237,37 +235,6 @@ bool handle_procedure_response(e1ap_bearer_context_modification_request& bearer_
   return ue_context_setup_resp.success;
 }
 
-optional<security::sec_as_config>
-inter_cu_handover_target_routine::generate_security_keys(security::security_context& sec_context)
-{
-  optional<security::sec_as_config> cfg;
-
-  // Select preferred integrity algorithm.
-  security::preferred_integrity_algorithms inc_algo_pref_list  = {security::integrity_algorithm::nia2,
-                                                                  security::integrity_algorithm::nia1,
-                                                                  security::integrity_algorithm::nia3,
-                                                                  security::integrity_algorithm::nia0};
-  security::preferred_ciphering_algorithms ciph_algo_pref_list = {security::ciphering_algorithm::nea0,
-                                                                  security::ciphering_algorithm::nea2,
-                                                                  security::ciphering_algorithm::nea1,
-                                                                  security::ciphering_algorithm::nea3};
-  if (not sec_context.select_algorithms(inc_algo_pref_list, ciph_algo_pref_list)) {
-    logger.warning("ue={}: Could not select security algorithm", request.ue_index);
-    return cfg;
-  }
-  logger.debug("ue={}: Selected security algorithms NIA=NIA{} NEA=NEA{}",
-               request.ue_index,
-               sec_context.sel_algos.integ_algo,
-               sec_context.sel_algos.cipher_algo);
-
-  // Generate K_rrc_enc and K_rrc_int
-  sec_context.generate_as_keys();
-
-  cfg = sec_context.get_as_config(security::sec_domain::rrc);
-
-  return cfg;
-}
-
 bool inter_cu_handover_target_routine::fill_e1ap_bearer_context_setup_request(const security::sec_as_config& sec_info)
 {
   bearer_context_setup_request.ue_index = request.ue_index;
@@ -276,14 +243,14 @@ bool inter_cu_handover_target_routine::fill_e1ap_bearer_context_setup_request(co
   bearer_context_setup_request.security_info.security_algorithm.ciphering_algo                 = sec_info.cipher_algo;
   bearer_context_setup_request.security_info.security_algorithm.integrity_protection_algorithm = sec_info.integ_algo;
   auto k_enc_buffer = byte_buffer::create(sec_info.k_enc);
-  if (k_enc_buffer.is_error()) {
+  if (not k_enc_buffer.has_value()) {
     logger.warning("Unable to allocate byte_buffer");
     return false;
   }
   bearer_context_setup_request.security_info.up_security_key.encryption_key = std::move(k_enc_buffer.value());
   if (sec_info.k_int.has_value()) {
     auto k_int_buffer = byte_buffer::create(sec_info.k_int.value());
-    if (k_int_buffer.is_error()) {
+    if (not k_int_buffer.has_value()) {
       logger.warning("Unable to allocate byte_buffer");
       return false;
     }
@@ -292,7 +259,7 @@ bool inter_cu_handover_target_routine::fill_e1ap_bearer_context_setup_request(co
   }
 
   bearer_context_setup_request.ue_dl_aggregate_maximum_bit_rate = request.ue_aggr_max_bit_rate.ue_aggr_max_bit_rate_dl;
-  bearer_context_setup_request.serving_plmn = request.source_to_target_transparent_container.target_cell_id.plmn;
+  bearer_context_setup_request.serving_plmn = request.source_to_target_transparent_container.target_cell_id.plmn_id;
   bearer_context_setup_request.activity_notif_level = "ue"; // TODO: Remove hardcoded value
   if (bearer_context_setup_request.activity_notif_level == "ue") {
     bearer_context_setup_request.ue_inactivity_timer = ue_mng.get_ue_config().inactivity_timer;

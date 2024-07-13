@@ -105,7 +105,7 @@ CLI::Option* add_option_function(CLI::App&                            app,
 {
   auto* opt = app.get_option_no_throw(option_name);
   if (!opt) {
-    return app.add_option_function<T>(option_name, func, desc);
+    return app.add_option_function<T>(option_name, func, desc)->run_callback_for_default();
   }
 
   // Option was found. Get the callback and create new option.
@@ -157,7 +157,7 @@ inline CLI::Option* add_option_cell(CLI::App&                                   
 
 /// Parse string into optional type.
 template <typename T>
-bool lexical_cast(const std::string& in, srsran::optional<T>& output)
+bool lexical_cast(const std::string& in, std::optional<T>& output)
 {
   using CLI::detail::lexical_cast;
 
@@ -171,10 +171,10 @@ bool lexical_cast(const std::string& in, srsran::optional<T>& output)
 
 /// Parsing an integer with additional option "auto" into an optional of an enum type.
 template <typename Param>
-void add_auto_enum_option(CLI::App&          app,
-                          const std::string& option_name,
-                          optional<Param>&   param,
-                          const std::string& desc)
+void add_auto_enum_option(CLI::App&             app,
+                          const std::string&    option_name,
+                          std::optional<Param>& param,
+                          const std::string&    desc)
 {
   add_option_function<std::string>(
       app,

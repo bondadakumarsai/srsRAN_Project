@@ -27,7 +27,6 @@
 
 #include "srsran/adt/bounded_bitset.h"
 #include "srsran/adt/span.h"
-#include "srsran/adt/static_vector.h"
 #include "srsran/adt/tensor.h"
 #include "srsran/phy/constants.h"
 #include "srsran/phy/upper/channel_state_information.h"
@@ -99,7 +98,7 @@ public:
     ce.resize({dims.nof_prb * NRE, dims.nof_symbols, dims.nof_rx_ports, dims.nof_tx_layers});
 
     // Set all reserved memory to one.
-    span<cf_t> data = ce.get_view<4>({});
+    span<cbf16_t> data = ce.get_view<4>({});
     std::fill(data.begin(), data.end(), 1.0F);
 
     // Reserve memory for the rest of channel statistics.
@@ -192,7 +191,7 @@ public:
   }
 
   /// Returns the carrier frequency offset in hertz estimated for the given Rx port and Tx layer.
-  optional<float> get_cfo_Hz(unsigned rx_port, unsigned tx_layer = 0) const
+  std::optional<float> get_cfo_Hz(unsigned rx_port, unsigned tx_layer = 0) const
   {
     return cfo[path_to_index(rx_port, tx_layer)];
   }
@@ -200,23 +199,39 @@ public:
   /// \brief Returns a read-write view to the RE channel estimates of the path between the given Rx port and Tx layer.
   ///
   /// The view is represented as a vector indexed by i) subcarriers and ii) OFDM symbols.
-  span<cf_t> get_path_ch_estimate(unsigned rx_port, unsigned tx_layer = 0)
+  span<cbf16_t> get_path_ch_estimate(unsigned rx_port, unsigned tx_layer = 0)
   {
+    srsran_assert(rx_port < nof_rx_ports,
+                  "The receive port index (i.e., {}) exceeds the number of receive ports (i.e., {}).",
+                  rx_port,
+                  nof_rx_ports);
+    srsran_assert(tx_layer < nof_tx_layers,
+                  "The transmit layer index (i.e., {}) exceeds the number of transmit layers (i.e., {}).",
+                  tx_layer,
+                  nof_tx_layers);
     return ce.get_view<2>({rx_port, tx_layer});
   }
 
   /// \brief Returns a read-only view to the RE channel estimates of the path between the given Rx port and Tx layer.
   ///
   /// The view is represented as a vector indexed by i) subcarriers and ii) OFDM symbols.
-  span<const cf_t> get_path_ch_estimate(unsigned rx_port, unsigned tx_layer = 0) const
+  span<const cbf16_t> get_path_ch_estimate(unsigned rx_port, unsigned tx_layer = 0) const
   {
+    srsran_assert(rx_port < nof_rx_ports,
+                  "The receive port index (i.e., {}) exceeds the number of receive ports (i.e., {}).",
+                  rx_port,
+                  nof_rx_ports);
+    srsran_assert(tx_layer < nof_tx_layers,
+                  "The transmit layer index (i.e., {}) exceeds the number of transmit layers (i.e., {}).",
+                  tx_layer,
+                  nof_tx_layers);
     return ce.get_view<2>({rx_port, tx_layer});
   }
 
   /// \brief Returns a read-write view to the RE channel estimates for a given OFDM symbol, Rx port and Tx layer.
   ///
   /// The view is represented as a vector indexed by subcarrier.
-  span<cf_t> get_symbol_ch_estimate(unsigned i_symbol, unsigned rx_port = 0, unsigned tx_layer = 0)
+  span<cbf16_t> get_symbol_ch_estimate(unsigned i_symbol, unsigned rx_port = 0, unsigned tx_layer = 0)
   {
     return ce.get_view<1>({i_symbol, rx_port, tx_layer});
   }
@@ -224,7 +239,7 @@ public:
   /// \brief Returns a read-only view to the RE channel estimates for a given OFDM symbol, Rx port and Tx layer.
   ///
   /// The view is represented as a vector indexed by subcarrier.
-  span<const cf_t> get_symbol_ch_estimate(unsigned i_symbol, unsigned rx_port = 0, unsigned tx_layer = 0) const
+  span<const cbf16_t> get_symbol_ch_estimate(unsigned i_symbol, unsigned rx_port = 0, unsigned tx_layer = 0) const
   {
     return ce.get_view<1>({i_symbol, rx_port, tx_layer});
   }
@@ -262,7 +277,7 @@ public:
     csi.set_time_alignment(get_time_alignment(best_rx_port, 0));
 
     // Use the CFO of the channel path with best SNR.
-    optional<float> cfo_help = get_cfo_Hz(best_rx_port, 0);
+    std::optional<float> cfo_help = get_cfo_Hz(best_rx_port, 0);
     if (cfo_help.has_value()) {
       csi.set_cfo(cfo_help.value());
     }
@@ -307,7 +322,7 @@ public:
   }
 
   /// Sets the estimated carrier frequency offset in hertz for the path between the given Rx port and Tx layer.
-  void set_cfo_Hz(optional<float> new_cfo, unsigned rx_port, unsigned tx_layer = 0)
+  void set_cfo_Hz(std::optional<float> new_cfo, unsigned rx_port, unsigned tx_layer = 0)
   {
     cfo[path_to_index(rx_port, tx_layer)] = new_cfo;
   }
@@ -397,7 +412,7 @@ private:
   std::vector<phy_time_unit> time_alignment;
 
   /// Estimated CFO.
-  std::vector<optional<float>> cfo;
+  std::vector<std::optional<float>> cfo;
   ///@}
 
   /// \brief Container for channel estimates.
@@ -405,7 +420,7 @@ private:
   /// The channel estimate should be thought as four-dimensional tensor with dimensions representing, in order,
   /// subcarriers, OFDM symbols, receive ports and, finally, transmit layers. However, it is represented as a single
   /// vector, indexed in the same order: i) subcarriers, ii) OFDM symbols, iii) Rx ports, and iv) Tx layers.
-  dynamic_tensor<4, cf_t> ce;
+  dynamic_tensor<4, cbf16_t> ce;
 
   /// Transforms a port-layer pair into a linear index.
   unsigned path_to_index(unsigned rx_port, unsigned tx_layer = 0) const

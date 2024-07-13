@@ -22,12 +22,10 @@
 
 #pragma once
 
-#include "../adapters/e1ap_adapters.h"
-#include "../cu_cp_impl_interface.h"
 #include "../task_schedulers/cu_up_task_scheduler.h"
+#include "cu_up_processor_impl_interface.h"
 #include "srsran/cu_cp/cu_cp_e1_handler.h"
 #include "srsran/cu_cp/cu_cp_types.h"
-#include "srsran/support/async/async_task.h"
 #include <unordered_map>
 
 namespace srsran {

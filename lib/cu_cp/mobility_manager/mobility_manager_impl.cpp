@@ -48,13 +48,13 @@ void mobility_manager::trigger_handover(pci_t source_pci, rnti_t rnti, pci_t tar
     logger.warning("Could not trigger handover, UE is invalid. rnti={} pci={}", rnti, source_pci);
     return;
   }
-  handle_handover(ue_index, gnb_id_t{}, nr_cell_id_t{}, target_pci); // TODO: define gNB-ID and NCI
+  handle_handover(ue_index, gnb_id_t{}, nr_cell_identity{}, target_pci); // TODO: define gNB-ID and NCI
 }
 
-void mobility_manager::handle_neighbor_better_than_spcell(ue_index_t   ue_index,
-                                                          gnb_id_t     neighbor_gnb_id,
-                                                          nr_cell_id_t neighbor_nci,
-                                                          pci_t        neighbor_pci)
+void mobility_manager::handle_neighbor_better_than_spcell(ue_index_t       ue_index,
+                                                          gnb_id_t         neighbor_gnb_id,
+                                                          nr_cell_identity neighbor_nci,
+                                                          pci_t            neighbor_pci)
 {
   if (!cfg.trigger_handover_from_measurements) {
     logger.debug("ue={}: Ignoring better neighbor pci={}", ue_index, neighbor_pci);
@@ -63,13 +63,13 @@ void mobility_manager::handle_neighbor_better_than_spcell(ue_index_t   ue_index,
   handle_handover(ue_index, neighbor_gnb_id, neighbor_nci, neighbor_pci);
 }
 
-void mobility_manager::handle_handover(ue_index_t   ue_index,
-                                       gnb_id_t     neighbor_gnb_id,
-                                       nr_cell_id_t neighbor_nci,
-                                       pci_t        neighbor_pci)
+void mobility_manager::handle_handover(ue_index_t       ue_index,
+                                       gnb_id_t         neighbor_gnb_id,
+                                       nr_cell_identity neighbor_nci,
+                                       pci_t            neighbor_pci)
 {
   // Find the UE context.
-  du_ue* u = ue_mng.find_du_ue(ue_index);
+  cu_cp_ue* u = ue_mng.find_du_ue(ue_index);
   if (u == nullptr) {
     logger.error("ue={}: Couldn't find UE", ue_index);
     return;
@@ -112,7 +112,7 @@ void mobility_manager::handle_inter_du_handover(ue_index_t source_ue_index,
                                                 du_index_t target_du_index)
 {
   // Lookup CGI at target DU.
-  optional<nr_cell_global_id_t> cgi =
+  std::optional<nr_cell_global_id_t> cgi =
       du_db.get_du_processor(target_du_index).get_mobility_handler().get_cgi(neighbor_pci);
   if (!cgi.has_value()) {
     logger.warning(
@@ -126,7 +126,11 @@ void mobility_manager::handle_inter_du_handover(ue_index_t source_ue_index,
   request.cgi                             = cgi.value();
   request.target_du_index                 = target_du_index;
 
-  du_processor_ue_task_handler& ue_task = du_db.get_du_processor(source_du_index).get_ue_task_handler();
+  cu_cp_ue* u = ue_mng.find_du_ue(source_ue_index);
+  if (u == nullptr) {
+    logger.error("ue={}: Couldn't find UE", source_ue_index);
+    return;
+  }
 
   // Trigger Inter DU handover routine on the DU processor of the source DU.
   auto ho_trigger = [this, request, response = cu_cp_inter_du_handover_response{}, &source_du_index, &target_du_index](
@@ -135,7 +139,7 @@ void mobility_manager::handle_inter_du_handover(ue_index_t source_ue_index,
     CORO_AWAIT_VALUE(response, cu_cp_notifier.on_inter_du_handover_required(request, source_du_index, target_du_index));
     CORO_RETURN();
   };
-  ue_task.handle_ue_async_task(request.source_ue_index, launch_async(std::move(ho_trigger)));
+  u->get_task_sched().schedule_async_task(launch_async(std::move(ho_trigger)));
 }
 
 void mobility_manager::handle_intra_du_handover(ue_index_t source_ue_index, pci_t neighbor_pci)
@@ -143,18 +147,33 @@ void mobility_manager::handle_intra_du_handover(ue_index_t source_ue_index, pci_
   // TODO: prepare call
 }
 
-void mobility_manager::handle_inter_cu_handover(ue_index_t   source_ue_index,
-                                                gnb_id_t     target_gnb_id,
-                                                nr_cell_id_t target_nci)
+void mobility_manager::handle_inter_cu_handover(ue_index_t       source_ue_index,
+                                                gnb_id_t         target_gnb_id,
+                                                nr_cell_identity target_nci)
 {
-  du_index_t source_du_index = ue_mng.find_du_ue(source_ue_index)->get_du_index();
-
-  du_processor_ue_task_handler& ue_task = du_db.get_du_processor(source_du_index).get_ue_task_handler();
+  cu_cp_ue* u = ue_mng.find_du_ue(source_ue_index);
+  if (u == nullptr) {
+    logger.error("ue={}: Couldn't find UE", source_ue_index);
+    return;
+  }
 
   ngap_handover_preparation_request request = {};
   request.ue_index                          = source_ue_index;
   request.gnb_id                            = target_gnb_id;
   request.nci                               = target_nci;
+
+  // create a map of all PDU sessions and their associated QoS flows
+  const std::map<pdu_session_id_t, up_pdu_session_context>& pdu_sessions =
+      ue_mng.find_ue(source_ue_index)->get_up_resource_manager().get_pdu_sessions_map();
+  for (const auto& pdu_session : pdu_sessions) {
+    std::vector<qos_flow_id_t> qos_flows;
+    for (const auto& drb : pdu_session.second.drbs) {
+      for (const auto& qos_flow : drb.second.qos_flows) {
+        qos_flows.push_back(qos_flow.first);
+      }
+    }
+    request.pdu_sessions.insert({pdu_session.first, qos_flows});
+  }
 
   // Send handover preparation request to the NGAP handler.
   auto ho_trigger =
@@ -163,5 +182,5 @@ void mobility_manager::handle_inter_cu_handover(ue_index_t   source_ue_index,
         CORO_AWAIT_VALUE(response, ngap_handler.handle_handover_preparation_request(request));
         CORO_RETURN();
       };
-  ue_task.handle_ue_async_task(request.ue_index, launch_async(std::move(ho_trigger)));
+  u->get_task_sched().schedule_async_task(launch_async(std::move(ho_trigger)));
 }

@@ -31,7 +31,7 @@ using namespace srs_cu_cp;
 class ngap_pdu_session_resource_release_procedure_test : public ngap_test
 {
 protected:
-  ue_index_t start_procedure(const pdu_session_id_t pdu_session_id)
+  ue_index_t start_procedure(const pdu_session_id_t pdu_session_id, bool enable_security = true)
   {
     ue_index_t ue_index = create_ue();
 
@@ -46,6 +46,11 @@ protected:
 
     // Inject PDU Session Resource Setup request
     run_pdu_session_resource_setup(ue_index, pdu_session_id);
+
+    if (enable_security) {
+      // Mark security as enabled
+      ue_mng.find_ue(ue_index)->get_security_manager().enable_security();
+    }
 
     return ue_index;
   }
@@ -68,18 +73,18 @@ protected:
   bool was_pdu_session_resource_release_command_valid() const
   {
     // Check that AMF notifier was called with right type
-    return msg_notifier.last_ngap_msgs.back().pdu.successful_outcome().value.type() ==
+    return n2_gw.last_ngap_msgs.back().pdu.successful_outcome().value.type() ==
            asn1::ngap::ngap_elem_procs_o::successful_outcome_c::types_opts::pdu_session_res_release_resp;
   }
 
   bool was_pdu_session_resource_setup_request_valid() const
   {
     // Check that AMF notifier was called with right type
-    bool test_1 = msg_notifier.last_ngap_msgs.back().pdu.successful_outcome().value.type() ==
+    bool test_1 = n2_gw.last_ngap_msgs.back().pdu.successful_outcome().value.type() ==
                   asn1::ngap::ngap_elem_procs_o::successful_outcome_c::types_opts::pdu_session_res_setup_resp;
 
     // Check that response contains PDU Session Resource Setup List
-    bool test_2 = msg_notifier.last_ngap_msgs.back()
+    bool test_2 = n2_gw.last_ngap_msgs.back()
                       .pdu.successful_outcome()
                       .value.pdu_session_res_setup_resp()
                       ->pdu_session_res_setup_list_su_res_present;

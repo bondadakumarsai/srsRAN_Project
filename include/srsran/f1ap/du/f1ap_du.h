@@ -171,6 +171,9 @@ class f1ap_du_configurator : public f1ap_task_scheduler
 public:
   virtual ~f1ap_du_configurator() = default;
 
+  /// Called when the F1-C interface shutdowns unexpectedly.
+  virtual void on_f1c_disconnection() = 0;
+
   /// \brief Search for an unused DU UE index.
   virtual du_ue_index_t find_free_ue_index() = 0;
 
@@ -214,15 +217,11 @@ public:
 
 /// Combined entry point for F1AP handling.
 class f1ap_du : public f1ap_message_handler,
-                public f1ap_event_handler,
                 public f1ap_rrc_message_transfer_procedure_handler,
                 public f1ap_connection_manager,
                 public f1ap_ue_context_manager,
                 public f1ap_ue_id_translator
-{
-public:
-  virtual ~f1ap_du() = default;
-};
+{};
 
 } // namespace srs_du
 } // namespace srsran

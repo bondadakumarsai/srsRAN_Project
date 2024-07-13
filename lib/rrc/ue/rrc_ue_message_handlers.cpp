@@ -109,29 +109,29 @@ void rrc_ue_impl::handle_rrc_setup_request(const asn1::rrc_nr::rrc_setup_request
   context.connection_cause.value = request_ies.establishment_cause.value;
 
   // Launch RRC setup procedure
-  task_sched.schedule_async_task(launch_async<rrc_setup_procedure>(context,
-                                                                   request_ies.establishment_cause.value,
-                                                                   du_to_cu_container,
-                                                                   *this,
-                                                                   get_rrc_ue_srb_handler(),
-                                                                   nas_notifier,
-                                                                   *event_mng,
-                                                                   logger));
+  cu_cp_ue_notifier.schedule_async_task(launch_async<rrc_setup_procedure>(
+      context, du_to_cu_container, *this, get_rrc_ue_srb_handler(), nas_notifier, *event_mng, logger));
 }
 
 void rrc_ue_impl::handle_rrc_reest_request(const asn1::rrc_nr::rrc_reest_request_s& msg)
 {
-  task_sched.schedule_async_task(launch_async<rrc_reestablishment_procedure>(msg,
-                                                                             context,
-                                                                             du_to_cu_container,
-                                                                             up_resource_mng,
-                                                                             *this,
-                                                                             *this,
-                                                                             get_rrc_ue_srb_handler(),
-                                                                             cu_cp_notifier,
-                                                                             nas_notifier,
-                                                                             *event_mng,
-                                                                             logger));
+  // Launch RRC re-establishment procedure
+  cu_cp_ue_notifier.schedule_async_task(launch_async<rrc_reestablishment_procedure>(msg,
+                                                                                    context,
+                                                                                    du_to_cu_container,
+                                                                                    *this,
+                                                                                    *this,
+                                                                                    get_rrc_ue_srb_handler(),
+                                                                                    cu_cp_notifier,
+                                                                                    cu_cp_ue_notifier,
+                                                                                    nas_notifier,
+                                                                                    *event_mng,
+                                                                                    logger));
+}
+
+void rrc_ue_impl::stop()
+{
+  event_mng->transactions.stop();
 }
 
 void rrc_ue_impl::handle_pdu(const srb_id_t srb_id, byte_buffer rrc_pdu)
@@ -220,7 +220,7 @@ void rrc_ue_impl::handle_ul_info_transfer(const ul_info_transfer_ies_s& ul_info_
   ul_nas_msg.ue_index                       = context.ue_index;
   ul_nas_msg.nas_pdu                        = ul_info_transfer.ded_nas_msg.copy();
   ul_nas_msg.user_location_info.nr_cgi      = context.cell.cgi;
-  ul_nas_msg.user_location_info.tai.plmn_id = context.cell.cgi.plmn_hex;
+  ul_nas_msg.user_location_info.tai.plmn_id = context.cell.cgi.plmn_id;
   ul_nas_msg.user_location_info.tai.tac     = context.cell.tac;
 
   nas_notifier.on_ul_nas_transport_message(ul_nas_msg);
@@ -229,9 +229,13 @@ void rrc_ue_impl::handle_ul_info_transfer(const ul_info_transfer_ies_s& ul_info_
 void rrc_ue_impl::handle_measurement_report(const asn1::rrc_nr::meas_report_s& msg)
 {
   // convert asn1 to common type
-  rrc_meas_results meas_results = asn1_to_measurement_results(msg.crit_exts.meas_report().meas_results);
-  // send measurement results to cell measurement manager
-  measurement_notifier.on_measurement_report(meas_results);
+  rrc_meas_results meas_results =
+      asn1_to_measurement_results(msg.crit_exts.meas_report().meas_results, srslog::fetch_basic_logger("RRC"));
+  // Send measurement results to cell measurement manager only measurements are not empty.
+  if (meas_results.meas_result_neigh_cells.has_value() and
+      not meas_results.meas_result_neigh_cells->meas_result_list_nr.empty()) {
+    measurement_notifier.on_measurement_report(meas_results);
+  }
 }
 
 void rrc_ue_impl::handle_dl_nas_transport_message(byte_buffer nas_pdu)
@@ -338,7 +342,7 @@ rrc_ue_release_context rrc_ue_impl::get_rrc_ue_release_context(bool requires_rrc
   // prepare location info to return
   rrc_ue_release_context release_context;
   release_context.user_location_info.nr_cgi      = context.cell.cgi;
-  release_context.user_location_info.tai.plmn_id = context.cell.cgi.plmn_hex;
+  release_context.user_location_info.tai.plmn_id = context.cell.cgi.plmn_id;
   release_context.user_location_info.tai.tac     = context.cell.tac;
 
   if (requires_rrc_message) {
@@ -396,7 +400,7 @@ rrc_ue_release_context rrc_ue_impl::get_rrc_ue_release_context(bool requires_rrc
   return release_context;
 }
 
-optional<rrc_meas_cfg> rrc_ue_impl::generate_meas_config(optional<rrc_meas_cfg> current_meas_config)
+std::optional<rrc_meas_cfg> rrc_ue_impl::generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config)
 {
   // (Re-)generate measurement config and return result.
   context.meas_cfg = measurement_notifier.on_measurement_config_request(context.cell.cgi.nci, current_meas_config);
@@ -406,10 +410,10 @@ optional<rrc_meas_cfg> rrc_ue_impl::generate_meas_config(optional<rrc_meas_cfg> 
 rrc_ue_transfer_context rrc_ue_impl::get_transfer_context()
 {
   rrc_ue_transfer_context transfer_context;
-  transfer_context.sec_context               = context.sec_context;
+  transfer_context.sec_context               = cu_cp_ue_notifier.get_security_context();
   transfer_context.meas_cfg                  = context.meas_cfg;
   transfer_context.srbs                      = get_srbs();
-  transfer_context.up_ctx                    = up_resource_mng.get_up_context();
+  transfer_context.up_ctx                    = cu_cp_notifier.on_up_context_required();
   transfer_context.handover_preparation_info = get_packed_handover_preparation_message();
   return transfer_context;
 }
@@ -417,39 +421,22 @@ rrc_ue_transfer_context rrc_ue_impl::get_transfer_context()
 rrc_ue_reestablishment_context_response rrc_ue_impl::get_context()
 {
   rrc_ue_reestablishment_context_response rrc_reest_context;
-  rrc_reest_context.sec_context = context.sec_context;
+  rrc_reest_context.sec_context = cu_cp_ue_notifier.get_security_context();
 
   if (context.capabilities.has_value()) {
     rrc_reest_context.capabilities = context.capabilities.value();
   }
-  rrc_reest_context.up_ctx = up_resource_mng.get_up_context();
+  rrc_reest_context.up_ctx = cu_cp_notifier.on_up_context_required();
+
+  // TODO: Handle scenario with multiple reestablishments for the same UE
+  rrc_reest_context.reestablishment_ongoing = context.reestablishment_ongoing;
+
+  // If no reestablishment is ongoing, set it to true.
+  if (not context.reestablishment_ongoing) {
+    context.reestablishment_ongoing = true;
+  }
 
   return rrc_reest_context;
-}
-
-bool rrc_ue_impl::handle_new_security_context(const security::security_context& sec_context)
-{
-  // Copy security context to RRC UE context
-  context.sec_context = sec_context;
-
-  // Select preferred integrity algorithm.
-  security::preferred_integrity_algorithms inc_algo_pref_list  = context.cfg.int_algo_pref_list;
-  security::preferred_ciphering_algorithms ciph_algo_pref_list = context.cfg.enc_algo_pref_list;
-  if (not context.sec_context.select_algorithms(inc_algo_pref_list, ciph_algo_pref_list)) {
-    logger.log_error("Could not select security algorithm");
-    return false;
-  }
-  logger.log_debug("Selected security algorithms NIA=NIA{} NEA=NEA{}",
-                   context.sec_context.sel_algos.integ_algo,
-                   context.sec_context.sel_algos.cipher_algo);
-
-  // Generate K_rrc_enc and K_rrc_int
-  context.sec_context.generate_as_keys();
-
-  // activate SRB1 PDCP security
-  on_new_as_security_context();
-
-  return true;
 }
 
 byte_buffer rrc_ue_impl::get_rrc_handover_command(const rrc_reconfiguration_procedure_request& request,

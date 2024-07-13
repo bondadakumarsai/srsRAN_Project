@@ -21,11 +21,42 @@
  */
 
 #include "cu_cp_unit_config_cli11_schema.h"
+#include "apps/services/logger/logger_appconfig_cli11_utils.h"
 #include "cu_cp_unit_config.h"
 #include "srsran/support/cli11_utils.h"
 #include "srsran/support/config_parsers.h"
 
 using namespace srsran;
+
+static void configure_cli11_log_args(CLI::App& app, cu_cp_unit_logger_config& log_params)
+{
+  app_services::add_log_option(app, log_params.pdcp_level, "--pdcp_level", "PDCP log level");
+  app_services::add_log_option(app, log_params.rrc_level, "--rrc_level", "RRC log level");
+  app_services::add_log_option(app, log_params.ngap_level, "--ngap_level", "NGAP log level");
+  app_services::add_log_option(app, log_params.f1ap_level, "--f1ap_level", "F1AP log level");
+  app_services::add_log_option(app, log_params.cu_level, "--cu_level", "Log level for the CU");
+  app_services::add_log_option(app, log_params.sec_level, "--sec_level", "Security functions log level");
+
+  add_option(
+      app, "--hex_max_size", log_params.hex_max_size, "Maximum number of bytes to print in hex (zero for no hex dumps)")
+      ->capture_default_str()
+      ->check(CLI::Range(0, 1024));
+
+  add_option(app, "--f1ap_json_enabled", log_params.f1ap_json_enabled, "Enable JSON logging of F1AP PDUs")
+      ->always_capture_default();
+}
+
+static void configure_cli11_pcap_args(CLI::App& app, cu_cp_unit_pcap_config& pcap_params)
+{
+  add_option(app, "--ngap_filename", pcap_params.ngap.filename, "N3 GTP-U PCAP file output path")
+      ->capture_default_str();
+  add_option(app, "--ngap_enable", pcap_params.ngap.enabled, "Enable N3 GTP-U packet capture")
+      ->always_capture_default();
+  add_option(app, "--f1ap_filename", pcap_params.f1ap.filename, "F1AP PCAP file output path")->capture_default_str();
+  add_option(app, "--f1ap_enable", pcap_params.f1ap.enabled, "Enable F1AP packet capture")->always_capture_default();
+  add_option(app, "--e1ap_filename", pcap_params.e1ap.filename, "E1AP PCAP file output path")->capture_default_str();
+  add_option(app, "--e1ap_enable", pcap_params.e1ap.enabled, "Enable E1AP packet capture")->always_capture_default();
+}
 
 static void configure_cli11_report_args(CLI::App& app, cu_cp_unit_report_config& report_params)
 {
@@ -57,14 +88,16 @@ static void configure_cli11_report_args(CLI::App& app, cu_cp_unit_report_config&
 
 static void configure_cli11_ncell_args(CLI::App& app, cu_cp_unit_neighbor_cell_config_item& config)
 {
-  add_option(app, "--nr_cell_id", config.nr_cell_id, "Neighbor cell id");
+  add_option(app, "--nr_cell_id", config.nr_cell_id, "Neighbor cell id")
+      ->check(CLI::Range(static_cast<uint64_t>(0U), nr_cell_identity::max().value()));
   add_option(
       app, "--report_configs", config.report_cfg_ids, "Report configurations to configure for this neighbor cell");
 }
 
 static void configure_cli11_cells_args(CLI::App& app, cu_cp_unit_cell_config_item& config)
 {
-  add_option(app, "--nr_cell_id", config.nr_cell_id, "Cell id to be configured");
+  add_option(app, "--nr_cell_id", config.nr_cell_id, "Cell id to be configured")
+      ->check(CLI::Range(static_cast<uint64_t>(0U), nr_cell_identity::max().value()));
   add_option(app,
              "--periodic_report_cfg_id",
              config.periodic_report_cfg_id,
@@ -212,9 +245,26 @@ static void configure_cli11_cu_cp_args(CLI::App& app, cu_cp_unit_config& cu_cp_p
              cu_cp_params.max_nof_cu_ups,
              "Maximum number of CU-UP connections that the CU-CP may accept");
 
+  add_option(app, "--max_nof_ues", cu_cp_params.max_nof_ues, "Maximum number of UEs that the CU-CP may accept");
+
   add_option(app, "--inactivity_timer", cu_cp_params.inactivity_timer, "UE/PDU Session/DRB inactivity timer in seconds")
       ->capture_default_str()
       ->check(CLI::Range(1, 7200));
+
+  add_option(app, "--plmns", cu_cp_params.plmns, "List of allowed PLMNs");
+  add_option(app, "--tacs", cu_cp_params.tacs, "List of allowed TACs")->check([](const std::string& value) {
+    std::stringstream ss(value);
+    unsigned          tac;
+    ss >> tac;
+
+    // Values 0 and 0xfffffe are reserved.
+    if (tac == 0U || tac == 0xfffffeU) {
+      return "TAC values 0 or 0xfffffe are reserved";
+    }
+
+    return (tac <= 0xffffffU) ? "" : "TAC value out of range";
+  });
+  ;
 
   add_option(app,
              "--pdu_session_setup_timeout",
@@ -232,35 +282,8 @@ static void configure_cli11_cu_cp_args(CLI::App& app, cu_cp_unit_config& cu_cp_p
   CLI::App* security_subcmd = app.add_subcommand("security", "Security configuration");
   configure_cli11_security_args(*security_subcmd, cu_cp_params.security_config);
 
-  CLI::App* f1ap_subcmd = app.add_subcommand("f1ap", "F1AP configuration");
+  CLI::App* f1ap_subcmd = add_subcommand(app, "f1ap", "F1AP configuration parameters");
   configure_cli11_f1ap_args(*f1ap_subcmd, cu_cp_params.f1ap_config);
-}
-
-static void configure_cli11_log_args(CLI::App& app, cu_cp_unit_logger_config& log_params)
-{
-  auto level_check = [](const std::string& value) -> std::string {
-    if (value == "info" || value == "debug" || value == "warning" || value == "error") {
-      return {};
-    }
-    return "Log level value not supported. Accepted values [info,debug,warning,error]";
-  };
-
-  add_option(app, "--pdcp_level", log_params.pdcp_level, "PDCP log level")->capture_default_str()->check(level_check);
-  add_option(app, "--rrc_level", log_params.rrc_level, "RRC log level")->capture_default_str()->check(level_check);
-  add_option(app, "--ngap_level", log_params.ngap_level, "NGAP log level")->capture_default_str()->check(level_check);
-  add_option(app, "--f1ap_level", log_params.f1ap_level, "F1AP log level")->capture_default_str()->check(level_check);
-  add_option(app, "--cu_level", log_params.cu_level, "Log level for the CU")->capture_default_str()->check(level_check);
-  add_option(app, "--sec_level", log_params.sec_level, "Security functions log level")
-      ->capture_default_str()
-      ->check(level_check);
-
-  add_option(
-      app, "--hex_max_size", log_params.hex_max_size, "Maximum number of bytes to print in hex (zero for no hex dumps)")
-      ->capture_default_str()
-      ->check(CLI::Range(0, 1024));
-
-  add_option(app, "--f1ap_json_enabled", log_params.f1ap_json_enabled, "Enable JSON logging of F1AP PDUs")
-      ->always_capture_default();
 }
 
 static void configure_cli11_rlc_um_args(CLI::App& app, cu_cp_unit_rlc_um_config& rlc_um_params)
@@ -381,6 +404,31 @@ static void configure_cli11_slicing_args(CLI::App& app, s_nssai_t& slice_params)
       ->check(CLI::Range(0, 0xffffff));
 }
 
+static void configure_cli11_amf_args(CLI::App& app, cu_cp_unit_amf_config& amf_params)
+{
+  add_option(app, "--addr", amf_params.ip_addr, "AMF IP address");
+  add_option(app, "--port", amf_params.port, "AMF port")->capture_default_str()->check(CLI::Range(20000, 40000));
+  add_option(app,
+             "--bind_addr",
+             amf_params.bind_addr,
+             "Default local IP address interfaces bind to, unless a specific bind address is specified")
+      ->check(CLI::ValidIPV4);
+  add_option(app, "--n2_bind_addr", amf_params.n2_bind_addr, "Local IP address to bind for N2 interface")
+      ->check(CLI::ValidIPV4);
+  add_option(app, "--n2_bind_interface", amf_params.n2_bind_interface, "Network device to bind for N2 interface")
+      ->capture_default_str();
+  add_option(app, "--sctp_rto_initial", amf_params.sctp_rto_initial, "SCTP initial RTO value");
+  add_option(app, "--sctp_rto_min", amf_params.sctp_rto_min, "SCTP RTO min");
+  add_option(app, "--sctp_rto_max", amf_params.sctp_rto_max, "SCTP RTO max");
+  add_option(app, "--sctp_init_max_attempts", amf_params.sctp_init_max_attempts, "SCTP init max attempts");
+  add_option(app, "--sctp_max_init_timeo", amf_params.sctp_max_init_timeo, "SCTP max init timeout");
+  add_option(app,
+             "--sctp_nodelay",
+             amf_params.sctp_nodelay,
+             "Send SCTP messages as soon as possible without any Nagle-like algorithm");
+  add_option(app, "--no_core", amf_params.no_core, "Allow gNB to run without a core");
+}
+
 void srsran::configure_cli11_with_cu_cp_unit_config_schema(CLI::App& app, cu_cp_unit_config& unit_cfg)
 {
   add_option(app, "--gnb_id", unit_cfg.gnb_id.id, "gNodeB identifier")->capture_default_str();
@@ -388,6 +436,9 @@ void srsran::configure_cli11_with_cu_cp_unit_config_schema(CLI::App& app, cu_cp_
       ->capture_default_str()
       ->check(CLI::Range(22, 32));
   add_option(app, "--ran_node_name", unit_cfg.ran_node_name, "RAN node name")->capture_default_str();
+  // AMF section.
+  CLI::App* amf_subcmd = add_subcommand(app, "amf", "AMF parameters")->configurable();
+  configure_cli11_amf_args(*amf_subcmd, unit_cfg.amf_cfg);
 
   // CU-CP section
   CLI::App* cu_cp_subcmd = add_subcommand(app, "cu_cp", "CU-CP parameters")->configurable();
@@ -396,6 +447,10 @@ void srsran::configure_cli11_with_cu_cp_unit_config_schema(CLI::App& app, cu_cp_
   // Loggers section.
   CLI::App* log_subcmd = add_subcommand(app, "log", "Logging configuration")->configurable();
   configure_cli11_log_args(*log_subcmd, unit_cfg.loggers);
+
+  // PCAP section.
+  CLI::App* pcap_subcmd = add_subcommand(app, "pcap", "PCAP configuration")->configurable();
+  configure_cli11_pcap_args(*pcap_subcmd, unit_cfg.pcap_cfg);
 
   // Metrics section.
   CLI::App* metrics_subcmd = add_subcommand(app, "metrics", "Metrics configuration")->configurable();
@@ -434,4 +489,37 @@ void srsran::configure_cli11_with_cu_cp_unit_config_schema(CLI::App& app, cu_cp_
     }
   };
   add_option_cell(app, "--slicing", slicing_lambda, "Network slicing configuration");
+}
+
+static std::vector<std::string> auto_generate_plmns()
+{
+  std::vector<std::string> vec = {"00101"};
+  return vec;
+}
+
+static std::vector<unsigned> auto_generate_tacs()
+{
+  std::vector<unsigned> out_cfg = {7};
+
+  return out_cfg;
+}
+
+void srsran::autoderive_cu_cp_parameters_after_parsing(CLI::App&                app,
+                                                       cu_cp_unit_config&       unit_cfg,
+                                                       std::vector<std::string> plmns,
+                                                       std::vector<unsigned>    tacs)
+{
+  auto cu_cp_app = app.get_subcommand_ptr("cu_cp");
+  // No PLMNs defined in the cu_cp section. Use the given ones.
+  if (cu_cp_app->count_all() == 0 || cu_cp_app->count("--plmns") == 0) {
+    srsran_assert(unit_cfg.plmns.empty(), "PLMN list is not empty");
+
+    unit_cfg.plmns = plmns.empty() ? auto_generate_plmns() : std::move(plmns);
+  }
+
+  if (cu_cp_app->count_all() == 0 || cu_cp_app->count("--tacs") == 0) {
+    srsran_assert(unit_cfg.tacs.empty(), "TAC list is not empty");
+
+    unit_cfg.tacs = tacs.empty() ? auto_generate_tacs() : std::move(tacs);
+  }
 }

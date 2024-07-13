@@ -23,7 +23,7 @@
 #include "ngap_handover_preparation_procedure.h"
 #include "srsran/asn1/ngap/common.h"
 #include "srsran/ngap/ngap_message.h"
-#include "srsran/ran/bcd_helpers.h"
+#include "srsran/ran/bcd_helper.h"
 
 using namespace srsran;
 using namespace srsran::srs_cu_cp;
@@ -36,7 +36,6 @@ ngap_handover_preparation_procedure::ngap_handover_preparation_procedure(
     ngap_message_notifier&                   amf_notifier_,
     ngap_rrc_ue_control_notifier&            rrc_ue_notifier_,
     ngap_cu_cp_notifier&                     cu_cp_notifier_,
-    up_resource_manager&                     up_manager_,
     ngap_transaction_manager&                ev_mng_,
     timer_factory                            timers,
     ngap_ue_logger&                          logger_) :
@@ -46,7 +45,6 @@ ngap_handover_preparation_procedure::ngap_handover_preparation_procedure(
   amf_notifier(amf_notifier_),
   rrc_ue_notifier(rrc_ue_notifier_),
   cu_cp_notifier(cu_cp_notifier_),
-  up_manager(up_manager_),
   ev_mng(ev_mng_),
   logger(logger_),
   tng_reloc_prep_timer(timers.create_timer())
@@ -105,18 +103,7 @@ void ngap_handover_preparation_procedure::operator()(coro_context<async_task<nga
 
 void ngap_handover_preparation_procedure::get_required_handover_context()
 {
-  ngap_ue_source_handover_context                           src_ctx;
-  const std::map<pdu_session_id_t, up_pdu_session_context>& pdu_sessions = up_manager.get_pdu_sessions_map();
-  // create a map of all PDU sessions and their associated QoS flows
-  for (const auto& pdu_session : pdu_sessions) {
-    std::vector<qos_flow_id_t> qos_flows;
-    for (const auto& drb : pdu_session.second.drbs) {
-      for (const auto& qos_flow : drb.second.qos_flows) {
-        qos_flows.push_back(qos_flow.first);
-      }
-    }
-    ho_ue_context.pdu_sessions.insert({pdu_session.first, qos_flows});
-  }
+  ho_ue_context.pdu_sessions  = request.pdu_sessions;
   ho_ue_context.rrc_container = rrc_ue_notifier.on_handover_preparation_message_required();
 }
 
@@ -146,14 +133,12 @@ void ngap_handover_preparation_procedure::send_handover_required()
 
 void ngap_handover_preparation_procedure::fill_asn1_target_ran_node_id(target_id_c& target_id)
 {
-  target_id.set_target_ran_node_id();
-  target_id.target_ran_node_id();
-  target_id.target_ran_node_id().global_ran_node_id.set(global_ran_node_id_c::types::global_gnb_id);
-  target_id.target_ran_node_id().global_ran_node_id.global_gnb_id().plmn_id.from_number(
-      plmn_string_to_bcd(context.plmn)); // cross-PLMN handover not supported
-  target_id.target_ran_node_id().global_ran_node_id.global_gnb_id().gnb_id.set_gnb_id();
-  target_id.target_ran_node_id().global_ran_node_id.global_gnb_id().gnb_id.gnb_id().from_number(
-      request.gnb_id.id, request.gnb_id.bit_length);
+  auto& target_node = target_id.set_target_ran_node_id();
+  target_node.global_ran_node_id.set(global_ran_node_id_c::types::global_gnb_id);
+  auto& global_gnb   = target_node.global_ran_node_id.global_gnb_id();
+  global_gnb.plmn_id = context.plmn.to_bytes();
+  global_gnb.gnb_id.set_gnb_id();
+  global_gnb.gnb_id.gnb_id().from_number(request.gnb_id.id, request.gnb_id.bit_length);
 }
 
 void ngap_handover_preparation_procedure::fill_asn1_pdu_session_res_list(
@@ -193,8 +178,8 @@ byte_buffer ngap_handover_preparation_procedure::fill_asn1_source_to_target_tran
   }
   nr_cgi_s& target_nr_cgi = transparent_container.target_cell_id.set_nr_cgi();
 
-  target_nr_cgi.plmn_id.from_number(plmn_string_to_bcd(context.plmn)); // cross-PLMN handover not supported
-  target_nr_cgi.nr_cell_id.from_number(request.nci);
+  target_nr_cgi.plmn_id = context.plmn.to_bytes();
+  target_nr_cgi.nr_cell_id.from_number(request.nci.value());
 
   last_visited_cell_item_s        last_visited_cell_item;
   last_visited_ngran_cell_info_s& ngran_cell = last_visited_cell_item.last_visited_cell_info.set_ngran_cell();

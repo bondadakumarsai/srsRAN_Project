@@ -22,6 +22,7 @@
 
 #include "fapi_to_mac_data_msg_translator.h"
 #include "srsran/fapi/messages.h"
+#include "srsran/srslog/srslog.h"
 
 using namespace srsran;
 using namespace fapi_adaptor;
@@ -81,21 +82,21 @@ static float to_uci_ul_rsrp(uint16_t rsrp)
 }
 
 /// Converts the given FAPI UCI SINR to dB as per SCF-222 v4.0 section 3.4.9.
-static optional<float> convert_fapi_to_mac_ul_sinr(int16_t fapi_ul_sinr)
+static std::optional<float> convert_fapi_to_mac_ul_sinr(int16_t fapi_ul_sinr)
 {
   if (fapi_ul_sinr != std::numeric_limits<decltype(fapi_ul_sinr)>::min()) {
     return to_uci_ul_sinr(fapi_ul_sinr);
   }
-  return nullopt;
+  return std::nullopt;
 }
 
 /// Converts the given FAPI UCI RSRP to dBFS as per SCF-222 v4.0 section 3.4.9.
-static optional<float> convert_fapi_to_mac_rsrp(uint16_t fapi_rsrp)
+static std::optional<float> convert_fapi_to_mac_rsrp(uint16_t fapi_rsrp)
 {
   if (fapi_rsrp != std::numeric_limits<decltype(fapi_rsrp)>::max()) {
     return to_uci_ul_rsrp(fapi_rsrp);
   }
-  return nullopt;
+  return std::nullopt;
 }
 
 fapi_to_mac_data_msg_translator::fapi_to_mac_data_msg_translator(subcarrier_spacing scs_) :
@@ -115,7 +116,7 @@ void fapi_to_mac_data_msg_translator::on_rx_data_indication(const fapi::rx_data_
     }
 
     auto pdu_buffer = byte_buffer::create(span<const uint8_t>(fapi_pdu.data, fapi_pdu.pdu_length));
-    if (pdu_buffer.is_error()) {
+    if (not pdu_buffer.has_value()) {
       srslog::fetch_basic_logger("FAPI").warning("Unable to allocate memory for MAC RX PDU");
       // Avoid new buffer allocations for the same FAPI PDU.
       break;
@@ -155,7 +156,7 @@ void fapi_to_mac_data_msg_translator::on_crc_indication(const fapi::crc_indicati
 }
 
 /// Converts the given FAPI Timing Advance Offset in nanoseconds to Physical layer time unit.
-static void convert_fapi_to_mac_ta_offset(optional<phy_time_unit>& mac_ta_offset, int16_t fapi_ta_offset_ns)
+static void convert_fapi_to_mac_ta_offset(std::optional<phy_time_unit>& mac_ta_offset, int16_t fapi_ta_offset_ns)
 {
   if (fapi_ta_offset_ns != std::numeric_limits<decltype(fapi_ta_offset_ns)>::min()) {
     mac_ta_offset = phy_time_unit::from_seconds(static_cast<float>(fapi_ta_offset_ns) * 1e-9);
@@ -163,12 +164,12 @@ static void convert_fapi_to_mac_ta_offset(optional<phy_time_unit>& mac_ta_offset
 }
 
 /// Converts the given FAPI UCI RSSI to dB as per SCF-222 v4.0 section 3.4.9.
-static optional<float> convert_fapi_to_mac_rssi(uint16_t fapi_rssi)
+static std::optional<float> convert_fapi_to_mac_rssi(uint16_t fapi_rssi)
 {
   if (fapi_rssi != std::numeric_limits<decltype(fapi_rssi)>::max()) {
     return to_uci_ul_rssi(fapi_rssi);
   }
-  return nullopt;
+  return std::nullopt;
 }
 
 /// Returns true if the UCI payload is valid given a FAPI detection status.

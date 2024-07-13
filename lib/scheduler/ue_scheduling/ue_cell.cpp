@@ -27,6 +27,7 @@
 #include "../support/prbs_calculator.h"
 #include "srsran/ran/sch/tbs_calculator.h"
 #include "srsran/scheduler/scheduler_feedback_handler.h"
+#include "srsran/srslog/srslog.h"
 
 using namespace srsran;
 
@@ -79,12 +80,12 @@ void ue_cell::set_fallback_state(bool set_fallback)
   logger.debug("ue={} rnti={}: {} fallback mode", ue_index, rnti(), in_fallback_mode ? "Entering" : "Leaving");
 }
 
-optional<dl_harq_process::dl_ack_info_result> ue_cell::handle_dl_ack_info(slot_point                 uci_slot,
-                                                                          mac_harq_ack_report_status ack_value,
-                                                                          unsigned                   harq_bit_idx,
-                                                                          optional<float>            pucch_snr)
+std::optional<dl_harq_process::dl_ack_info_result> ue_cell::handle_dl_ack_info(slot_point                 uci_slot,
+                                                                               mac_harq_ack_report_status ack_value,
+                                                                               unsigned                   harq_bit_idx,
+                                                                               std::optional<float>       pucch_snr)
 {
-  optional<dl_harq_process::dl_ack_info_result> result =
+  std::optional<dl_harq_process::dl_ack_info_result> result =
       harqs.dl_ack_info(uci_slot, ack_value, harq_bit_idx, pucch_snr);
 
   if (result.has_value() and (result->update == dl_harq_process::status_update::acked or
@@ -118,7 +119,7 @@ grant_prbs_mcs ue_cell::required_dl_prbs(const pdsch_time_domain_resource_alloca
       report_fatal_error("Unsupported PDCCH DCI DL format");
   }
 
-  optional<sch_mcs_index> mcs = ue_mcs_calculator.calculate_dl_mcs(pdsch_cfg.mcs_table);
+  std::optional<sch_mcs_index> mcs = ue_mcs_calculator.calculate_dl_mcs(pdsch_cfg.mcs_table);
   if (not mcs.has_value()) {
     // Return a grant with no PRBs if the MCS is invalid (CQI is either 0, for UE out of range, or > 15).
     return grant_prbs_mcs{.n_prbs = 0};
@@ -263,8 +264,8 @@ get_prioritized_search_spaces(const ue_cell& ue_cc, FilterSearchSpace filter, bo
 }
 
 static_vector<const search_space_info*, MAX_NOF_SEARCH_SPACE_PER_BWP>
-ue_cell::get_active_dl_search_spaces(slot_point                        pdcch_slot,
-                                     optional<dci_dl_rnti_config_type> required_dci_rnti_type) const
+ue_cell::get_active_dl_search_spaces(slot_point                             pdcch_slot,
+                                     std::optional<dci_dl_rnti_config_type> required_dci_rnti_type) const
 {
   static_vector<const search_space_info*, MAX_NOF_SEARCH_SPACE_PER_BWP> active_search_spaces;
 
@@ -343,8 +344,8 @@ ue_cell::get_active_dl_search_spaces(slot_point                        pdcch_slo
 }
 
 static_vector<const search_space_info*, MAX_NOF_SEARCH_SPACE_PER_BWP>
-ue_cell::get_active_ul_search_spaces(slot_point                        pdcch_slot,
-                                     optional<dci_ul_rnti_config_type> required_dci_rnti_type) const
+ue_cell::get_active_ul_search_spaces(slot_point                             pdcch_slot,
+                                     std::optional<dci_ul_rnti_config_type> required_dci_rnti_type) const
 {
   // In fallback mode state, only use search spaces configured in CellConfigCommon.
   if (is_in_fallback_mode()) {
@@ -481,11 +482,9 @@ void ue_cell::apply_link_adaptation_procedures(const csi_report_data& csi_report
   }
 }
 
-double
-ue_cell::get_estimated_dl_brate_kbps(const pdsch_config_params& pdsch_cfg, sch_mcs_index mcs, unsigned nof_prbs) const
+double ue_cell::get_estimated_dl_rate(const pdsch_config_params& pdsch_cfg, sch_mcs_index mcs, unsigned nof_prbs) const
 {
-  static const double slot_duration_ms =
-      SUBFRAME_DURATION_MSEC / get_nof_slots_per_subframe(cell_cfg.dl_cfg_common.init_dl_bwp.generic_params.scs);
+  static constexpr unsigned NOF_BITS_PER_BYTE = 8U;
 
   const unsigned      dmrs_prbs   = calculate_nof_dmrs_per_rb(pdsch_cfg.dmrs);
   sch_mcs_description mcs_info    = pdsch_mcs_get_config(pdsch_cfg.mcs_table, mcs);
@@ -500,15 +499,13 @@ ue_cell::get_estimated_dl_brate_kbps(const pdsch_config_params& pdsch_cfg, sch_m
                                                             .tb_scaling_field = pdsch_cfg.tb_scaling_field,
                                                             .n_prb            = nof_prbs});
 
-  // Return the estimated throughput, considering that the number of bits is for a slot.
-  return tbs_bits / slot_duration_ms;
+  // Return the estimated throughput, considering that the number of bytes is for a slot.
+  return tbs_bits / NOF_BITS_PER_BYTE;
 }
 
-double
-ue_cell::get_estimated_ul_brate_kbps(const pusch_config_params& pusch_cfg, sch_mcs_index mcs, unsigned nof_prbs) const
+double ue_cell::get_estimated_ul_rate(const pusch_config_params& pusch_cfg, sch_mcs_index mcs, unsigned nof_prbs) const
 {
-  static const double slot_duration_ms =
-      SUBFRAME_DURATION_MSEC / get_nof_slots_per_subframe(cell_cfg.dl_cfg_common.init_dl_bwp.generic_params.scs);
+  static constexpr unsigned NOF_BITS_PER_BYTE = 8U;
 
   const unsigned      dmrs_prbs   = calculate_nof_dmrs_per_rb(pusch_cfg.dmrs);
   sch_mcs_description mcs_info    = pusch_mcs_get_config(pusch_cfg.mcs_table, mcs, pusch_cfg.tp_pi2bpsk_present);
@@ -523,6 +520,6 @@ ue_cell::get_estimated_ul_brate_kbps(const pusch_config_params& pusch_cfg, sch_m
                                                             .tb_scaling_field = pusch_cfg.tb_scaling_field,
                                                             .n_prb            = nof_prbs});
 
-  // Return the estimated throughput, considering that the number of bits is for a slot.
-  return tbs_bits / slot_duration_ms;
+  // Return the estimated throughput, considering that the number of bytes is for a slot.
+  return tbs_bits / NOF_BITS_PER_BYTE;
 }

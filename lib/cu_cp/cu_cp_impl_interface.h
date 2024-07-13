@@ -46,16 +46,35 @@ public:
   handle_ue_context_release_command(const cu_cp_ue_context_release_command& command) = 0;
 };
 
+/// Interface for the CU-CP to schedule tasks for UEs.
+class cu_cp_task_scheduler_handler
+{
+public:
+  virtual ~cu_cp_task_scheduler_handler() = default;
+
+  /// \brief Schedule a task for a UE.
+  /// \param[in] ue_index The index of the UE.
+  /// \param[in] task The task to schedule.
+  /// \returns True if the task was successfully scheduled, false otherwise.
+  virtual bool schedule_ue_task(ue_index_t ue_index, async_task<void> task) = 0;
+};
+
 /// Interface for the NGAP notifier to communicate with the CU-CP.
-class cu_cp_ngap_handler : public cu_cp_ue_context_release_handler
+class cu_cp_ngap_handler : public cu_cp_ue_context_release_handler, public cu_cp_task_scheduler_handler
 {
 public:
   virtual ~cu_cp_ngap_handler() = default;
 
   /// \brief Handle the creation of a new NGAP UE. This will add the NGAP adapters to the UE manager.
   /// \param[in] ue_index The index of the new NGAP UE.
-  /// \returns True if the UE was successfully created, false otherwise.
-  virtual bool handle_new_ngap_ue(ue_index_t ue_index) = 0;
+  /// \returns Pointer to the NGAP UE notifier.
+  virtual ngap_cu_cp_ue_notifier* handle_new_ngap_ue(ue_index_t ue_index) = 0;
+
+  /// \brief Initialize security context by selecting security algorithms and generating K_rrc_enc and K_rrc_int
+  /// \param[in] ue_index Index of the UE.
+  /// \param[in] sec_ctxt The received security context.
+  /// \return True if the security context was successfully initialized, false otherwise.
+  virtual bool handle_handover_request(ue_index_t ue_index, security::security_context sec_ctxt) = 0;
 
   /// \brief Handle the reception of a new PDU Session Resource Setup Request.
   /// \param[in] request The received PDU Session Resource Setup Request.
@@ -85,10 +104,16 @@ public:
   /// \param[in] command The received Handover Command.
   /// \returns True if the Handover Command was successfully handled, false otherwise.
   virtual async_task<bool> handle_new_handover_command(ue_index_t ue_index, byte_buffer command) = 0;
+
+  /// \brief Handles UE index allocation request for N2 handover at target gNB
+  virtual ue_index_t handle_ue_index_allocation_request(const nr_cell_global_id_t& cgi) = 0;
+
+  /// \brief Handle N2 AMF connection drop.
+  virtual void handle_n2_disconnection() = 0;
 };
 
 /// Handler of E1AP-CU-CP events.
-class cu_cp_e1ap_event_handler
+class cu_cp_e1ap_event_handler : public cu_cp_task_scheduler_handler
 {
 public:
   virtual ~cu_cp_e1ap_event_handler() = default;
@@ -143,6 +168,10 @@ public:
                                             rrc_ue_handler&                  rrc_handler,
                                             rrc_du_statistics_handler&       rrc_statistic_handler) = 0;
 
+  /// \brief Handle DU removal event.
+  /// \param[in] du_index The index of the DU.
+  virtual void handle_du_processor_removal(du_index_t du_index) = 0;
+
   /// \brief Handle a RRC UE creation notification from the DU processor.
   /// \param[in] ue_index The index of the UE.
   /// \param[in] rrc_ue The interface of the created RRC UE.
@@ -153,6 +182,9 @@ public:
   /// \param[in] cgi The cell global id of the cell.
   /// \returns The packed SIB1 for the cell, if available. An empty byte_buffer otherwise.
   virtual byte_buffer handle_target_cell_sib1_required(du_index_t du_index, nr_cell_global_id_t cgi) = 0;
+
+  /// \brief Handle transaction information loss in the F1AP.
+  virtual async_task<void> handle_transaction_info_loss(const f1_ue_transaction_info_loss_event& ev) = 0;
 };
 
 /// Interface for an RRC UE entity to communicate with the CU-CP.
@@ -238,9 +270,10 @@ public:
   /// \param[in] ue_index The index of the UE to update the measurement config for.
   /// \param[in] nci The cell id of the serving cell to update.
   /// \param[in] current_meas_config The current meas config of the UE (if applicable).
-  virtual optional<rrc_meas_cfg> handle_measurement_config_request(ue_index_t             ue_index,
-                                                                   nr_cell_id_t           nci,
-                                                                   optional<rrc_meas_cfg> current_meas_config = {}) = 0;
+  virtual std::optional<rrc_meas_cfg>
+  handle_measurement_config_request(ue_index_t                  ue_index,
+                                    nr_cell_identity            nci,
+                                    std::optional<rrc_meas_cfg> current_meas_config = {}) = 0;
 
   /// \brief Handle a measurement report for given UE.
   virtual void handle_measurement_report(const ue_index_t ue_index, const rrc_meas_results& meas_results) = 0;
@@ -255,7 +288,8 @@ public:
   /// \brief Handle a request to update the measurement related parameters for the given cell id.
   /// \param[in] nci The cell id of the serving cell to update.
   /// \param[in] serv_cell_cfg_ The serving cell meas config to update.
-  virtual bool handle_cell_config_update_request(nr_cell_id_t nci, const serving_cell_meas_config& serv_cell_cfg) = 0;
+  virtual bool handle_cell_config_update_request(nr_cell_identity                nci,
+                                                 const serving_cell_meas_config& serv_cell_cfg) = 0;
 };
 
 /// Interface to request handover.
@@ -280,6 +314,9 @@ public:
   /// \brief Completly remove a UE from the CU-CP.
   /// \param[in] ue_index The index of the UE to remove.
   virtual async_task<void> handle_ue_removal_request(ue_index_t ue_index) = 0;
+
+  /// \brief Cancel pending UE tasks.
+  virtual void handle_pending_ue_task_cancellation(ue_index_t ue_index) = 0;
 };
 
 class cu_cp_impl_interface : public cu_cp_e1ap_event_handler,

@@ -25,13 +25,13 @@
 #include "srsran/adt/bounded_bitset.h"
 #include "srsran/adt/optional.h"
 #include "srsran/adt/static_vector.h"
-#include "srsran/adt/variant.h"
 #include "srsran/ran/phy_time_unit.h"
 #include "srsran/ran/rnti.h"
 #include "srsran/ran/slot_pdu_capacity_constants.h"
 #include "srsran/ran/slot_point.h"
 #include "srsran/ran/uci/uci_constants.h"
 #include "srsran/ran/uci/uci_mapping.h"
+#include <variant>
 
 namespace srsran {
 
@@ -44,11 +44,11 @@ struct mac_crc_pdu {
   /// True if transport block is successfully decoded, otherwise false.
   bool tb_crc_success;
   /// PUSCH SINR value in dB.
-  optional<float> ul_sinr_dB;
+  std::optional<float> ul_sinr_dB;
   /// PUSCH RSRP value in dBFS.
-  optional<float> ul_rsrp_dBFS;
+  std::optional<float> ul_rsrp_dBFS;
   /// Time alignment.
-  optional<phy_time_unit> time_advance_offset;
+  std::optional<phy_time_unit> time_advance_offset;
 };
 
 /// List of Uplink CRC indication PDUs for a given slot.
@@ -110,20 +110,24 @@ struct mac_uci_pdu {
       bounded_bitset<uci_constants::MAX_NOF_CSI_PART1_OR_PART2_BITS> payload;
     };
 
+    // This user provided constructor is added here to fix a Clang compilation error related to the use of nested types
+    // with std::optional.
+    pusch_type() {}
+
     /// Metric of channel quality in dB.
-    optional<float> ul_sinr_dB;
+    std::optional<float> ul_sinr_dB;
     /// Timing Advance Offset measured for the UE.
-    optional<phy_time_unit> time_advance_offset;
+    std::optional<phy_time_unit> time_advance_offset;
     /// RSSI report in dBFS.
-    optional<float> rssi_dBFS;
+    std::optional<float> rssi_dBFS;
     /// RSRP report in dBFS.
-    optional<float> rsrp_dBFS;
+    std::optional<float> rsrp_dBFS;
     /// HARQ information.
-    optional<harq_information> harq_info;
+    std::optional<harq_information> harq_info;
     /// CSI Part 1 report information.
-    optional<csi_information> csi_part1_info;
+    std::optional<csi_information> csi_part1_info;
     /// CSI Part 2 report information.
-    optional<csi_information> csi_part2_info;
+    std::optional<csi_information> csi_part2_info;
   };
 
   /// UCI carried in PUCCH Format0 or Format1.
@@ -141,18 +145,22 @@ struct mac_uci_pdu {
       static_vector<uci_pucch_f0_or_f1_harq_values, NOF_HARQS_PER_UCI> harqs;
     };
 
+    // This user provided constructor is added here to fix a Clang compilation error related to the use of nested types
+    // with std::optional.
+    pucch_f0_or_f1_type() {}
+
     /// Metric of channel quality in dB.
-    optional<float> ul_sinr_dB;
+    std::optional<float> ul_sinr_dB;
     /// Timing Advance Offset measured for the UE.
-    optional<phy_time_unit> time_advance_offset;
+    std::optional<phy_time_unit> time_advance_offset;
     /// RSSI report in dBFS.
-    optional<float> rssi_dBFS;
+    std::optional<float> rssi_dBFS;
     /// RSRP report in dBFS.
-    optional<float> rsrp_dBFS;
+    std::optional<float> rsrp_dBFS;
     /// SR information.
-    optional<sr_information> sr_info;
+    std::optional<sr_information> sr_info;
     /// HARQ information.
-    optional<harq_information> harq_info;
+    std::optional<harq_information> harq_info;
   };
 
   /// UCI carried in PUCCH Format2, Format3 or Format4.
@@ -208,28 +216,32 @@ struct mac_uci_pdu {
       bounded_bitset<uci_constants::MAX_NOF_CSI_PART1_OR_PART2_BITS> payload;
     };
 
+    // This user provided constructor is added here to fix a Clang compilation error related to the use of nested types
+    // with std::optional.
+    pucch_f2_or_f3_or_f4_type() {}
+
     /// Metric of channel quality in dB.
-    optional<float> ul_sinr_dB;
+    std::optional<float> ul_sinr_dB;
     /// Timing Advance Offset measured for the UE.
-    optional<phy_time_unit> time_advance_offset;
+    std::optional<phy_time_unit> time_advance_offset;
     /// RSSI report in dBFS.
-    optional<float> rssi_dBFS;
+    std::optional<float> rssi_dBFS;
     /// RSRP report in dBFS.
-    optional<float> rsrp_dBFS;
+    std::optional<float> rsrp_dBFS;
     /// SR information.
-    optional<sr_information> sr_info;
+    std::optional<sr_information> sr_info;
     /// HARQ information.
-    optional<harq_information> harq_info;
+    std::optional<harq_information> harq_info;
     /// CSI Part 1 report information.
-    optional<csi_information> csi_part1_info;
+    std::optional<csi_information> csi_part1_info;
     /// CSI Part 2 report information.
-    optional<csi_information> csi_part2_info;
+    std::optional<csi_information> csi_part2_info;
   };
 
   /// RNTI value corresponding to the UE that generated this PDU.
   rnti_t rnti;
   /// UCI PDU multiplexed either in the PUSCH or encoded in the PUCCH.
-  variant<pusch_type, pucch_f0_or_f1_type, pucch_f2_or_f3_or_f4_type> pdu;
+  std::variant<pusch_type, pucch_f0_or_f1_type, pucch_f2_or_f3_or_f4_type> pdu;
 };
 
 /// List of UCI indication PDUs for a given slot.

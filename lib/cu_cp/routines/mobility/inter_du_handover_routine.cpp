@@ -124,7 +124,7 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
                                        target_ue_context_setup_response,
                                        next_config,
                                        logger,
-                                       false)) {
+                                       true)) {
       logger.warning("ue={}: \"{}\" failed to create UE context at target DU", request.source_ue_index, name());
       CORO_AWAIT(ue_removal_handler.handle_ue_removal_request(target_ue_context_setup_request.ue_index));
       // Note: From this point the UE is removed and only the stored context can be accessed.
@@ -145,7 +145,21 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
 
   // Inform CU-UP about new DL tunnels.
   {
-    //  prepare Bearer Context Release Command and call E1AP notifier
+    // get securtiy context of target UE
+    if (!target_ue->get_security_manager().is_security_context_initialized()) {
+      logger.warning(
+          "ue={}: \"{}\" failed. Cause: Security context not initialized", target_ue->get_ue_index(), name());
+      CORO_EARLY_RETURN(response_msg);
+    }
+
+    if (!add_security_context_to_bearer_context_modification(target_ue->get_security_manager().get_up_as_config())) {
+      logger.warning("ue={}: \"{}\" failed to create UE context at target DU", request.source_ue_index, name());
+      CORO_AWAIT(ue_removal_handler.handle_ue_removal_request(target_ue_context_setup_request.ue_index));
+      // Note: From this point the UE is removed and only the stored context can be accessed.
+      CORO_EARLY_RETURN(response_msg);
+    }
+
+    // prepare Bearer Context Modification Request and call E1AP notifier
     bearer_context_modification_request.ue_index = request.source_ue_index;
 
     // call E1AP procedure and wait for BearerContextModificationResponse
@@ -194,7 +208,6 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
       }
     }
 
-    target_ue = ue_mng.find_du_ue(target_ue_context_setup_response.ue_index);
     // Trigger RRC Reconfiguration
     CORO_AWAIT_VALUE(reconf_result,
                      launch_async<handover_reconfiguration_routine>(rrc_reconfig_args,
@@ -249,8 +262,13 @@ bool inter_du_handover_routine::generate_ue_context_setup_request(f1ap_ue_contex
   if (transfer_context.handover_preparation_info.empty()) {
     return false;
   }
+
   setup_request.cu_to_du_rrc_info.ie_exts.emplace();
-  setup_request.cu_to_du_rrc_info.ie_exts.value().ho_prep_info = transfer_context.handover_preparation_info;
+  auto buffer_copy = transfer_context.handover_preparation_info.deep_copy();
+  if (!buffer_copy) {
+    return false;
+  }
+  setup_request.cu_to_du_rrc_info.ie_exts.value().ho_prep_info = std::move(buffer_copy.value());
 
   for (const auto& srb_id : srbs) {
     f1ap_srbs_to_be_setup_mod_item srb_item;
@@ -267,7 +285,7 @@ bool inter_du_handover_routine::generate_ue_context_setup_request(f1ap_ue_contex
       drb_item.qos_info.drb_qos = drb_context.qos_params;
 
       // Add each QoS flow including QoS.
-      for (auto& flow : drb_context.qos_flows) {
+      for (const auto& flow : drb_context.qos_flows) {
         f1ap_flows_mapped_to_drb_item flow_item;
         flow_item.qos_flow_id               = flow.first;
         flow_item.qos_flow_level_qos_params = flow.second.qos_params;
@@ -275,6 +293,7 @@ bool inter_du_handover_routine::generate_ue_context_setup_request(f1ap_ue_contex
       }
       drb_item.ul_up_tnl_info_to_be_setup_list = drb_context.ul_up_tnl_info_to_be_setup_list;
       drb_item.rlc_mod                         = drb_context.rlc_mod;
+      drb_item.pdcp_sn_len                     = drb_context.pdcp_cfg.tx.sn_size;
 
       setup_request.drbs_to_be_setup_list.emplace(drb_item.drb_id, drb_item);
     }
@@ -283,7 +302,7 @@ bool inter_du_handover_routine::generate_ue_context_setup_request(f1ap_ue_contex
   return true;
 }
 
-void inter_du_handover_routine::create_srb(du_ue* ue, srb_id_t srb_id)
+void inter_du_handover_routine::create_srb(cu_cp_ue* ue, srb_id_t srb_id)
 {
   srb_creation_message srb_msg{};
   srb_msg.ue_index        = ue->get_ue_index();
@@ -291,4 +310,31 @@ void inter_du_handover_routine::create_srb(du_ue* ue, srb_id_t srb_id)
   srb_msg.enable_security = true;
   // TODO: add support for non-default PDCP config.
   ue->get_rrc_ue_srb_notifier().create_srb(srb_msg);
+}
+
+bool inter_du_handover_routine::add_security_context_to_bearer_context_modification(
+    const srsran::security::sec_as_config& security_cfg)
+{
+  // Fill security info
+  bearer_context_modification_request.security_info.emplace();
+  bearer_context_modification_request.security_info->security_algorithm.ciphering_algo = security_cfg.cipher_algo;
+  bearer_context_modification_request.security_info->security_algorithm.integrity_protection_algorithm =
+      security_cfg.integ_algo;
+  auto k_enc_buffer = byte_buffer::create(security_cfg.k_enc);
+  if (not k_enc_buffer.has_value()) {
+    logger.warning("Unable to allocate byte_buffer");
+    return false;
+  }
+  bearer_context_modification_request.security_info->up_security_key.encryption_key = std::move(k_enc_buffer.value());
+  if (security_cfg.k_int.has_value()) {
+    auto k_int_buffer = byte_buffer::create(security_cfg.k_int.value());
+    if (not k_int_buffer.has_value()) {
+      logger.warning("Unable to allocate byte_buffer");
+      return false;
+    }
+    bearer_context_modification_request.security_info->up_security_key.integrity_protection_key =
+        std::move(k_int_buffer.value());
+  }
+
+  return true;
 }

@@ -24,7 +24,6 @@
 
 #include "srsran/adt/bounded_bitset.h"
 #include "srsran/adt/static_vector.h"
-#include "srsran/adt/variant.h"
 #include "srsran/mac/bsr_format.h"
 #include "srsran/mac/lcid_dl_sch.h"
 #include "srsran/mac/phr_report.h"
@@ -36,6 +35,7 @@
 #include "srsran/ran/slot_point.h"
 #include "srsran/ran/uci/uci_constants.h"
 #include "srsran/scheduler/harq_id.h"
+#include <variant>
 
 namespace srsran {
 
@@ -68,11 +68,11 @@ struct ul_crc_pdu_indication {
   /// If true, transport block has been successfully decoded, otherwise false.
   bool tb_crc_success;
   /// PUSCH SINR value in dB.
-  optional<float> ul_sinr_dB;
+  std::optional<float> ul_sinr_dB;
   /// PUSCH RSRP value in dBFS.
-  optional<float> ul_rsrp_dBFS;
+  std::optional<float> ul_rsrp_dBFS;
   /// Timing Advance Offset measured for the UE.
-  optional<phy_time_unit> time_advance_offset;
+  std::optional<phy_time_unit> time_advance_offset;
 };
 
 /// UL HARQ CRC indication for a given UE PDU.
@@ -94,9 +94,9 @@ struct uci_indication {
       /// HARQ bits.
       static_vector<mac_harq_ack_report_status, NOF_HARQS_PER_UCI> harqs;
       /// Metric of channel quality in dB.
-      optional<float> ul_sinr_dB;
+      std::optional<float> ul_sinr_dB;
       /// Timing Advance Offset measured for the UE.
-      optional<phy_time_unit> time_advance_offset;
+      std::optional<phy_time_unit> time_advance_offset;
     };
 
     /// UCI multiplexed in the PUSCH.
@@ -104,7 +104,7 @@ struct uci_indication {
       /// HARQ bits.
       static_vector<mac_harq_ack_report_status, uci_constants::MAX_NOF_HARQ_BITS> harqs;
       /// CSI report.
-      optional<csi_report_data> csi;
+      std::optional<csi_report_data> csi;
     };
 
     /// UCI carried in PUCCH Format2, Format3 or Format4.
@@ -117,18 +117,18 @@ struct uci_indication {
       /// HARQ bits.
       static_vector<mac_harq_ack_report_status, uci_constants::MAX_NOF_HARQ_BITS> harqs;
       /// CSI report.
-      optional<csi_report_data> csi;
+      std::optional<csi_report_data> csi;
       /// Metric of channel quality in dB.
-      optional<float> ul_sinr_dB;
+      std::optional<float> ul_sinr_dB;
       /// Timing Advance Offset measured for the UE.
-      optional<phy_time_unit> time_advance_offset;
+      std::optional<phy_time_unit> time_advance_offset;
     };
 
     du_ue_index_t ue_index;
     /// RNTI value corresponding to the UE that generated this PDU.
     rnti_t crnti;
     /// UCI PDU multiplexed either in the PUSCH or encoded in the PUCCH.
-    variant<uci_pucch_f0_or_f1_pdu, uci_pusch_pdu, uci_pucch_f2_or_f3_or_f4_pdu> pdu;
+    std::variant<uci_pucch_f0_or_f1_pdu, uci_pusch_pdu, uci_pucch_f2_or_f3_or_f4_pdu> pdu;
   };
 
   using uci_pdu_list = static_vector<uci_pdu, MAX_UCI_PDUS_PER_UCI_IND>;

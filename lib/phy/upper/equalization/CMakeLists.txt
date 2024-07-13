@@ -19,11 +19,10 @@
 #
 
 set(SOURCES
-        channel_equalizer_zf_impl.cpp
+        channel_equalizer_generic_impl.cpp
         equalization_factories.cpp)
 
 add_library(srsran_channel_equalizer STATIC ${SOURCES})
 target_link_libraries(srsran_channel_equalizer srsvec)
 
-install(TARGETS srsran_channel_equalizer
-        EXPORT srsran_export)
+add_to_exported_libs(srsran_channel_equalizer)

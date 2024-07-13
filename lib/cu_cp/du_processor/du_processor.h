@@ -23,11 +23,8 @@
 #pragma once
 
 #include "du_metrics_handler.h"
-#include "srsran/adt/optional.h"
 #include "srsran/adt/static_vector.h"
-#include "srsran/cu_cp/cu_cp_f1c_handler.h"
 #include "srsran/f1ap/cu_cp/f1ap_cu.h"
-#include "srsran/ngap/ngap_handover.h"
 #include "srsran/ran/nr_cgi.h"
 #include "srsran/rrc/rrc_du.h"
 #include <string>
@@ -39,7 +36,7 @@ namespace srs_cu_cp {
 struct rrc_ue_creation_message;
 
 /// Interface for an F1AP notifier to communicate with the DU processor.
-class du_processor_f1ap_interface : public du_f1c_handler
+class du_processor_f1ap_interface
 {
 public:
   virtual ~du_processor_f1ap_interface() = default;
@@ -48,20 +45,20 @@ public:
   /// \return The DU index.
   virtual du_index_t get_du_index() = 0;
 
-  /// \brief Allocate a new UE index.
-  virtual ue_index_t allocate_new_ue_index() = 0;
-
   /// \brief Request to create a new UE RRC context.
   ///
   /// This method should be called when a C-RNTI and PCell are assigned to a UE.
   /// \param req Request to setup a new UE RRC context.
   /// \return Response to whether the request was successful or failed.
-  virtual ue_rrc_context_creation_response
+  virtual ue_rrc_context_creation_outcome
   handle_ue_rrc_context_creation_request(const ue_rrc_context_creation_request& req) = 0;
 
   /// \brief Handle the reception of a F1AP UE Context Release Request and notify NGAP.
   /// \param[in] req The F1AP UE Context Release Request.
   virtual void handle_du_initiated_ue_context_release_request(const f1ap_ue_context_release_request& request) = 0;
+
+  /// \brief Retrieve F1AP handler for the respective DU.
+  virtual f1ap_cu& get_f1ap_handler() = 0;
 
   /// \brief Get the F1AP UE context management handler interface of the DU processor object.
   /// \return The F1AP UE context management handler interface of the DU processor object.
@@ -70,6 +67,10 @@ public:
   /// \brief Get the F1AP UE context removal handler interface of the DU processor object.
   /// \return The F1AP UE context removal handler interface of the DU processor object.
   virtual f1ap_ue_context_removal_handler& get_f1ap_ue_context_removal_handler() = 0;
+
+  /// \brief Handle the loss of some transaction information for some UEs.
+  /// \return Asynchronous task that is completed when the event is fully handled.
+  virtual async_task<void> handle_ue_transaction_info_loss(const f1_ue_transaction_info_loss_event& request) = 0;
 
   /// \brief Get the F1AP statistics handler interface of the DU processor object.
   /// \return The F1AP statistics handler interface of the DU processor object.
@@ -84,8 +85,8 @@ public:
 
   /// Notify F1AP to establish the UE context.
   virtual async_task<f1ap_ue_context_setup_response>
-  on_ue_context_setup_request(const f1ap_ue_context_setup_request& request,
-                              optional<rrc_ue_transfer_context>    rrc_context) = 0;
+  on_ue_context_setup_request(const f1ap_ue_context_setup_request&   request,
+                              std::optional<rrc_ue_transfer_context> rrc_context) = 0;
 
   /// \brief Notify the F1AP to initiate the UE Context Release procedure.
   /// \param[in] msg The UE Context Release message to transmit.
@@ -139,12 +140,14 @@ public:
   /// \return Returns true on success, false otherwise.
   virtual bool on_new_served_cell_list(const std::vector<cu_cp_du_served_cells_item>& served_cell_list) = 0;
 
+  /// \brief Notify RRC DU about a required RRCReject.
+  /// \return Returns a RRC Container containing the RRCReject.
+  virtual byte_buffer on_rrc_reject_required() = 0;
+
   /// \brief Notify RRC DU to create a UE.
-  /// \param[in] resource_mng The UP resource manager of this UE.
   /// \param[in] msg The UE creation message.
   /// \return Returns a handle to the created UE.
-  virtual rrc_ue_interface* on_ue_creation_request(up_resource_manager&           resource_mng,
-                                                   const rrc_ue_creation_message& msg) = 0;
+  virtual rrc_ue_interface* on_ue_creation_request(const rrc_ue_creation_message& msg) = 0;
 
   /// Send RRC Release to all UEs connected to this DU.
   virtual void on_release_ues() = 0;
@@ -186,13 +189,9 @@ public:
   /// \brief (Re-)generate the RRC measurement config for the current serving cell of the UE.
   /// \params[in] current_meas_config The current meas config of the UE (if applicable).
   /// \return The measurement config, if present.
-  virtual optional<rrc_meas_cfg> generate_meas_config(optional<rrc_meas_cfg> current_meas_config = {}) = 0;
+  virtual std::optional<rrc_meas_cfg> generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config = {}) = 0;
 
   virtual byte_buffer get_packed_handover_preparation_message() = 0;
-
-  /// \brief Notify about the reception of a new security context.
-  /// \return True if the security context was applied successfully, false otherwise
-  virtual bool on_new_security_context(const security::security_context& sec_context) = 0;
 
   /// \brief Notify about the reception of a new Handover Command PDU.
   /// \param[in] cmd The handover command RRC PDU.
@@ -226,20 +225,10 @@ public:
   virtual ~du_processor_mobility_handler() = default;
 
   /// \brief Retrieve CGI for a given PCI of a DU.
-  virtual optional<nr_cell_global_id_t> get_cgi(pci_t pci) = 0;
+  virtual std::optional<nr_cell_global_id_t> get_cgi(pci_t pci) = 0;
 
   /// \brief Retrieve the SIB1 for a given PCI of a DU.
   virtual byte_buffer get_packed_sib1(nr_cell_global_id_t cgi) = 0;
-};
-
-/// Handler for an NGAP entity to communicate with the DU processor
-class du_processor_ngap_interface
-{
-public:
-  virtual ~du_processor_ngap_interface() = default;
-
-  /// \brief Allocate a new UE index.
-  virtual ue_index_t allocate_new_ue_index() = 0;
 };
 
 /// Interface to notify the F1AP about control messages.
@@ -251,27 +240,6 @@ public:
   /// \brief Notify about the reception of a new PDU Session Resource Setup List.
   virtual async_task<f1ap_ue_context_modification_response>
   on_new_pdu_session_resource_setup_request(f1ap_ue_context_modification_request& msg) = 0;
-};
-
-/// \brief Schedules asynchronous tasks associated with an UE.
-class du_processor_ue_task_scheduler
-{
-public:
-  virtual ~du_processor_ue_task_scheduler()                                              = default;
-  virtual void           schedule_async_task(ue_index_t ue_index, async_task<void> task) = 0;
-  virtual void           clear_pending_tasks(ue_index_t ue_index)                        = 0;
-  virtual unique_timer   make_unique_timer()                                             = 0;
-  virtual timer_manager& get_timer_manager()                                             = 0;
-};
-
-/// \brief Handles incoming task scheduling requests associated with an UE.
-class du_processor_ue_task_handler
-{
-public:
-  virtual ~du_processor_ue_task_handler()                                                   = default;
-  virtual void           handle_ue_async_task(ue_index_t ue_index, async_task<void>&& task) = 0;
-  virtual unique_timer   make_unique_timer()                                                = 0;
-  virtual timer_manager& get_timer_manager()                                                = 0;
 };
 
 /// Methods used by DU processor to notify about DU specific events.
@@ -310,6 +278,9 @@ public:
   /// \brief Notify the CU-CP to release a UE.
   /// \param[in] request The release request.
   virtual async_task<void> on_ue_release_required(const cu_cp_ue_context_release_request& request) = 0;
+
+  /// \brief Notify that the F1 transaction information was lost for some UEs.
+  virtual async_task<void> on_transaction_info_loss(const f1_ue_transaction_info_loss_event& ev) = 0;
 };
 
 /// DU processor Paging handler.
@@ -322,16 +293,6 @@ public:
   virtual void handle_paging_message(cu_cp_paging_message& msg) = 0;
 };
 
-/// DU processor inactivity handler.
-class du_processor_inactivity_handler
-{
-public:
-  virtual ~du_processor_inactivity_handler() = default;
-
-  /// \brief Handles an Inactivity notification message.
-  virtual void handle_inactivity_notification(const cu_cp_inactivity_notification& msg) = 0;
-};
-
 /// Interface for the NGAP to interface with the DU repository
 /// Useful for paging and handover
 class du_repository_ngap_handler
@@ -341,9 +302,6 @@ public:
 
   /// \brief Handles a Paging message notification.
   virtual void handle_paging_message(cu_cp_paging_message& msg) = 0;
-
-  /// \brief Handles UE index allocation request for N2 handover at target gNB
-  virtual ue_index_t handle_ue_index_allocation_request(const nr_cell_global_id_t& cgi) = 0;
 };
 
 /// Methods to get statistics of the DU processor.
@@ -363,10 +321,7 @@ public:
   virtual ~du_processor() = default;
 
   virtual du_processor_f1ap_interface&     get_f1ap_interface()     = 0;
-  virtual du_processor_ngap_interface&     get_ngap_interface()     = 0;
-  virtual du_processor_ue_task_handler&    get_ue_task_handler()    = 0;
   virtual du_processor_paging_handler&     get_paging_handler()     = 0;
-  virtual du_processor_inactivity_handler& get_inactivity_handler() = 0;
   virtual du_processor_statistics_handler& get_statistics_handler() = 0;
   virtual du_processor_mobility_handler&   get_mobility_handler()   = 0;
 
