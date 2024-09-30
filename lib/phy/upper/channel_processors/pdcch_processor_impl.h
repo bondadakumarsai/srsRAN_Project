@@ -27,8 +27,18 @@
 #include "srsran/phy/upper/channel_processors/pdcch_processor.h"
 #include "srsran/phy/upper/signal_processors/dmrs_pdcch_processor.h"
 
-namespace srsran {
+// #define PAYLOAD_SIZE 28
 
+namespace srsran {
+// extern std::chrono::steady_clock::time_point start_time;
+// extern bool is_start_time_initialized;
+
+
+// extern int next_XOR_payload[PAYLOAD_SIZE];
+// extern int default_XOR[PAYLOAD_SIZE];
+
+// void initialize_start_time();
+// bool twenty_seconds_passed();
 /// Describes the PDCCH processor generic implementation constructor configuration.
 struct pdcch_processor_config_t {
   /// Provides the PDCCH encoder. Ownership is transferred to the PDCCH processor.
@@ -85,7 +95,7 @@ public:
     srsran_assert(modulator, "Invalid modulator.");
     srsran_assert(dmrs, "Invalid DMRS generator.");
   }
-
+  void xor_payload(dci_description& dci, const std::array<uint8_t, pdcch_constants::MAX_DCI_PAYLOAD_SIZE>& xor_array);
   // See interface for documentation.
   void process(resource_grid_mapper& grid, const pdu_t& pdu) override;
 };

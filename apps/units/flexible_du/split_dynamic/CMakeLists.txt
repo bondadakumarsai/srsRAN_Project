@@ -38,7 +38,8 @@ set(FLEXIBLE_DU_DYNAMIC_LIBRARIES
         srsran_du_low_unit_helpers
         srsran_split_8_app_unit_helpers
         srsran_split_7_2_app_unit_helpers
-        srsran_du_high_unit_helpers)
+        srsran_du_high_unit_helpers
+        srsran_generic_funcs)
 
 # Hardware acceleration for both PUSCH and PDSCH is enabled by default when using DPDK.
 if (DPDK_FOUND)
