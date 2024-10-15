@@ -27,6 +27,18 @@
 #include "srsran/srsvec/copy.h"
 #include "srsran/srsvec/sc_prod.h"
 #include "srsran/srsvec/zero.h"
+#include "srsran/phy/upper/channel_processors/pdcch_processor.h"
+#include "srsran/phy/generic_functions/global.h"
+
+
+#define ROWS 624
+#define COLS 1
+
+using namespace srsran;
+
+int flag = 0;
+int flag_initializer = 0;
+bool DCIMask_Command = false; // Input should be coming from the keyboard
 
 using namespace srsran;
 
@@ -56,7 +68,9 @@ ofdm_symbol_modulator_impl::ofdm_symbol_modulator_impl(ofdm_modulator_common_con
 void ofdm_symbol_modulator_impl::modulate(span<cf_t>                  output,
                                           const resource_grid_reader& grid,
                                           unsigned                    port_index,
-                                          unsigned                    symbol_index)
+                                          unsigned                    symbol_index,
+					  unsigned a,
+					  unsigned b)
 {
   // Calculate number of symbols per slot.
   unsigned nsymb = get_nsymb_per_slot(cp);
@@ -80,11 +94,103 @@ void ofdm_symbol_modulator_impl::modulate(span<cf_t>                  output,
     return;
   }
 
+    unsigned start = 699;
+  // unsigned end   = 750;
+  if (a > start)
+  {
+    flag = 1;
+    // printf("Underlay Transmission starts \n");
+  }
+
+  // if (flag)
+  // {
+
+    if (b == 2)
+    {
+      char fullfilename[200]; //= "/home/vm1/Desktop/txFolderBin/underlay_grid700.bin";
+      //sprintf(fullfilename, "/home/vm1/Desktop/txFolderBin/underlay_grid700_%d.bin", symbol_index);
+
+      if (next_XOR_payload[0] == 0) { // Assuming if first bit is 0, the payload is all 0s
+            sprintf(fullfilename, "/home/kumar/Desktop/txFolderBin/underlay_grid0_%d.bin", symbol_index);
+            //printf("Hello, next_XOR_payload[0]=%d\n",next_XOR_payload[0]);
+            }
+      else { // Check if payload matches default_XOR
+            sprintf(fullfilename, "/home/kumar/Desktop/txFolderBin/underlay_grid700_%d.bin", symbol_index);
+      }
+
+
+      // Set the path appropriately
+      FILE *fp = fopen(fullfilename, "rb");
+      float *real_part = (float *)malloc(ROWS * COLS * sizeof(float));
+      float *imag_part = (float *)malloc(ROWS * COLS * sizeof(float));
+      int aa = fread(real_part, sizeof(float), ROWS * COLS, fp);
+      int bb = fread(imag_part, sizeof(float), ROWS * COLS, fp);
+      fclose(fp);
+      //printf("a = %d, b = %d\n",aa,bb);
+
+      // Prepare lower bound frequency domain data.
+      grid.get(dft->get_input().last(rg_size / 2), port_index, symbol_index % nsymb, 0);
+      auto x = dft->get_input().last(rg_size / 2);
+      for (int i = 0; i < (aa / 2); i++)
+      {
+        x[i] = x[i] + std::complex<float>(real_part[i], imag_part[i]);
+      }
+
+      // Prepare upper bound frequency domain data.
+      grid.get(dft->get_input().first(rg_size / 2), port_index, symbol_index % nsymb, rg_size / 2);
+      auto y = dft->get_input().first(rg_size / 2);
+      for (int i = 0; i < (bb / 2); i++)
+      {
+        // printf("z = %.4f + %.4fi, %d, %d \t",(output[108 + i].real()),(output[108 + i].imag()),a,b);
+        y[i] = y[i] + std::complex<float>(real_part[i + (rg_size / 2)], imag_part[i + (rg_size / 2)]);
+      }
+
+      free(real_part);
+      free(imag_part);
+    }
+    else
+    {
+
+      // Prepare lower bound frequency domain data.
+      grid.get(dft->get_input().last(rg_size / 2), port_index, symbol_index % nsymb, 0);
+
+      // Prepare upper bound frequency domain data.
+      grid.get(dft->get_input().first(rg_size / 2), port_index, symbol_index % nsymb, rg_size / 2);
+    }
+  //}
+
+
+
+  if ((a % 64 == 0) && (b == 0))
+  {
+    //printf("global_flag=%d\n",global_flag);
+    for (int i = 0; i < PAYLOAD_SIZE_MASK; i++)
+    {
+      current_XOR_payload[i] = next_XOR_payload[i];
+    }
+
+    if (global_flag)
+    {
+      for (int i = 0; i < PAYLOAD_SIZE_MASK; i++)
+      {
+        next_XOR_payload[i] = default_XOR[i];
+      }
+    }
+    else
+    {
+      for (int i = 0; i < PAYLOAD_SIZE_MASK; i++)
+      {
+        next_XOR_payload[i] = 0;
+      }
+    }
+  }
+
+
   // Prepare lower bound frequency domain data.
-  grid.get(dft->get_input().last(rg_size / 2), port_index, symbol_index % nsymb, 0);
+  // grid.get(dft->get_input().last(rg_size / 2), port_index, symbol_index % nsymb, 0);
 
   // Prepare upper bound frequency domain data.
-  grid.get(dft->get_input().first(rg_size / 2), port_index, symbol_index % nsymb, rg_size / 2);
+  // grid.get(dft->get_input().first(rg_size / 2), port_index, symbol_index % nsymb, rg_size / 2);
 
   // Execute DFT.
   span<const cf_t> dft_output = dft->run();
@@ -131,7 +237,7 @@ void ofdm_slot_modulator_impl::modulate(span<cf_t>                  output,
     unsigned symbol_sz = symbol_modulator.get_symbol_size(nsymb * slot_index + symbol_idx);
 
     // Modulate symbol.
-    symbol_modulator.modulate(output.first(symbol_sz), grid, port_index, nsymb * slot_index + symbol_idx);
+    symbol_modulator.modulate(output.first(symbol_sz), grid, port_index, nsymb * slot_index + symbol_idx, 0, 0);
 
     // Advance output buffer.
     output = output.last(output.size() - symbol_sz);

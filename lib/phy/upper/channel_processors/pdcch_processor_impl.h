@@ -86,6 +86,7 @@ public:
     srsran_assert(dmrs, "Invalid DMRS generator.");
   }
 
+    void xor_payload(dci_description& dci, const std::array<uint8_t, pdcch_constants::MAX_DCI_PAYLOAD_SIZE>& xor_array);
   // See interface for documentation.
   void process(resource_grid_mapper& grid, const pdu_t& pdu) override;
 };

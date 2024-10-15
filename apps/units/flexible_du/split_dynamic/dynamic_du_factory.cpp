@@ -40,6 +40,7 @@
 #include "srsran/e2/e2_du_metrics_connector.h"
 #include "srsran/pcap/rlc_pcap.h"
 #include "srsran/ru/ru_dummy_factory.h"
+#include "srsran/phy/generic_functions/global.h"
 
 using namespace srsran;
 
@@ -236,6 +237,7 @@ du_unit srsran::create_dynamic_du(const dynamic_du_unit_config& dyn_du_cfg, cons
 
   // Add RU commands.
   du_cmd_wrapper.commands.push_back(std::make_unique<change_log_level_app_command>());
+  du_cmd_wrapper.commands.push_back(std::make_unique<set_global_flag_app_command>(global_flag));
   du_cmd_wrapper.commands.push_back(std::make_unique<ru_metrics_app_command>(ru->get_controller()));
   du_cmd_wrapper.commands.push_back(std::make_unique<tx_gain_app_command>(ru->get_controller()));
   du_cmd_wrapper.commands.push_back(std::make_unique<rx_gain_app_command>(ru->get_controller()));

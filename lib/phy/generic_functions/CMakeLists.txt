@@ -45,8 +45,8 @@ message(STATUS "FFT_LIBRARIES: " ${SRSRAN_DFT_LIBRARIES})
 add_library(srsran_generic_funcs_dft STATIC ${SRSRAN_DFT_SOURCES})
 target_link_libraries(srsran_generic_funcs_dft ${SRSRAN_DFT_LIBRARIES} srsvec srslog)
 
-add_library(srsran_generic_funcs STATIC generic_functions_factories.cpp)
-set_source_files_properties(generic_functions_factories.cpp PROPERTIES COMPILE_DEFINITIONS "${SRSRAN_DFT_DEFINITIONS}")
+add_library(srsran_generic_funcs STATIC generic_functions_factories.cpp global.cpp)
+set_source_files_properties(generic_functions_factories.cpp global.cpp PROPERTIES COMPILE_DEFINITIONS "${SRSRAN_DFT_DEFINITIONS}")
 target_link_libraries(srsran_generic_funcs srsran_generic_funcs_dft srslog)
 
 add_to_exported_libs(srsran_generic_funcs srsran_generic_funcs_dft)

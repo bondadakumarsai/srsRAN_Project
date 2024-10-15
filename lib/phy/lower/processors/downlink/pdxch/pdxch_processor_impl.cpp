@@ -91,7 +91,9 @@ bool pdxch_processor_impl::process_symbol(baseband_gateway_buffer_writer&       
 
   // Modulate each of the ports.
   for (unsigned i_port = 0; i_port != nof_tx_ports; ++i_port) {
-    modulator->modulate(samples.get_channel_buffer(i_port), current_grid.get_reader(), i_port, symbol_index_subframe);
+    //modulator->modulate(samples.get_channel_buffer(i_port), current_grid.get_reader(), i_port, symbol_index_subframe);
+
+    modulator->modulate(samples.get_channel_buffer(i_port), current_grid.get_reader(), i_port, symbol_index_subframe, context.slot.sfn(), context.slot.slot_index());
   }
 
   return true;

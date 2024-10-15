@@ -35,4 +35,5 @@ target_link_libraries(srsran_lower_phy
         srsran_lower_phy_modulation
         srsran_lower_phy_prach_processor
         srsran_lower_phy_puxch_processor
-        srsran_lower_phy_uplink_processor)
+        srsran_lower_phy_uplink_processor
+	srsran_channel_processors)

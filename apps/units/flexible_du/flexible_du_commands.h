@@ -27,6 +27,7 @@
 #include "srsran/adt/expected.h"
 #include "srsran/adt/to_array.h"
 #include "srsran/ru/ru_controller.h"
+#include "srsran/phy/generic_functions/global.h"
 
 namespace srsran {
 
@@ -198,5 +199,50 @@ public:
     channel.set_level(level.value());
   }
 };
+
+
+class set_global_flag_app_command : public app_services::application_command
+{
+  bool& global_flag_ref;
+  const std::string description;
+
+public:
+  set_global_flag_app_command(bool& flag) :
+    global_flag_ref(flag),
+    description(" <flag>:                        set global flag to true or false (experimental)\n"
+                "\t                                      Allowed values are: true, false")
+  {
+  }
+
+  // See interface for documentation.
+  std::string_view get_name() const override { return "set_flag"; }
+
+  // See interface for documentation.
+  std::string_view get_description() const override { return description; }
+
+  // See interface for documentation.
+  void execute(span<const std::string> args) override
+  { 
+    if (args.size() != 1) {
+      fmt::print("Invalid flag command syntax. Usage: set_flag <true|false>\n");
+      return;
+    }
+
+    std::string flag_str(args.front());
+    std::transform(flag_str.begin(), flag_str.end(), flag_str.begin(), ::tolower);
+
+    if (flag_str == "true") {
+      global_flag_ref = true;
+      fmt::print("Global flag set to true.\n");
+ //     printf("Global flag");
+    } else if (flag_str == "false") {
+      global_flag_ref = false;
+      fmt::print("Global flag set to false.\n");
+    } else {
+      fmt::print("Invalid flag value. Allowed values are: true, false\n");
+    }
+  }
+};
+
 
 } // namespace srsran

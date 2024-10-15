@@ -44,4 +44,5 @@ target_link_libraries(srsran_flexible_du
         srsran_du_low_unit_helpers
         srsran_split_8_app_unit_helpers
         srsran_split_7_2_app_unit_helpers
-        srsran_du_high_unit_helpers)
+        srsran_du_high_unit_helpers
+	srsran_generic_funcs)

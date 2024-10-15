@@ -27,6 +27,7 @@
 #include "srsran/phy/lower/modulation/ofdm_modulator.h"
 #include "srsran/ran/cyclic_prefix.h"
 #include "srsran/srsvec/aligned_vec.h"
+#include "srsran/phy/generic_functions/global.h"
 
 namespace srsran {
 
@@ -72,7 +73,9 @@ public:
 
   // See interface for documentation.
   void
-  modulate(span<cf_t> ouput, const resource_grid_reader& grid, unsigned port_index, unsigned symbol_index) override;
+//  modulate(span<cf_t> ouput, const resource_grid_reader& grid, unsigned port_index, unsigned symbol_index) override;
+modulate(span<cf_t> ouput, const resource_grid_reader& grid, unsigned port_index, unsigned symbol_index, unsigned a, unsigned b) override;
+
 };
 
 /// Describes a generic OFDM slot modulator.

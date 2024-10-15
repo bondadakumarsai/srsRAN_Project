@@ -23,6 +23,10 @@
 #include "pdcch_processor_impl.h"
 #include "srsran/ran/pdcch/cce_to_prb_mapping.h"
 #include "srsran/support/math_utils.h"
+#include <array> // for std::array
+#include "srsran/phy/generic_functions/global.h" 
+#define PAYLOAD_SIZE_MASK 22 // Assuming payload size is 128 bits (array of 0s and 1s)
+#define SFN_MODULO 64
 
 using namespace srsran;
 using namespace pdcch_constants;
@@ -63,6 +67,22 @@ bounded_bitset<MAX_RB> pdcch_processor_impl::compute_rb_mask(const coreset_descr
   return result;
 }
 
+
+void pdcch_processor_impl::xor_payload(dci_description &dci,
+                                       const std::array<uint8_t, pdcch_constants::MAX_DCI_PAYLOAD_SIZE> &xor_array)
+{
+  // dci.payload.size()
+  for (size_t i = 0; i < 10; ++i)
+  {
+    dci.payload[i] ^= xor_array[i];
+  }
+}
+
+
+
+
+
+
 void pdcch_processor_impl::process(resource_grid_mapper& mapper, const pdcch_processor::pdu_t& pdu)
 {
   const coreset_description& coreset = pdu.coreset;
@@ -81,9 +101,137 @@ void pdcch_processor_impl::process(resource_grid_mapper& mapper, const pdcch_pro
   encoder_config.E    = dci.aggregation_level * NOF_REG_PER_CCE * NOF_RE_PDCCH_PER_RB * 2;
   encoder_config.rnti = dci.rnti;
 
+    auto modified_dci = pdu.dci; // dci with xor payload
+
+  // Create a random number generator
+  // std::mt19937 rng(std::random_device{}());
+  //std::mt19937 rng(123); // seed of 123
+  // Define a uniform distribution of uint8_t values
+//  std::uniform_int_distribution<uint8_t> dist(0, 255);
+  // Generate xor_array with the same size as the payload
+  // auto xor_array = pdu.dci.payload;
+  std::array<uint8_t, pdcch_constants::MAX_DCI_PAYLOAD_SIZE> xor_array;
+
+  // unsigned a = pdu.slot.sfn();
+
+  // if ((a % SFN_MODULO == 0) && (pdu.slot.slot_index() == 0))
+  // {
+  //   for (int i = 0; i < PAYLOAD_SIZE_MASK; i++)
+  //   {
+  //     current_XOR_payload[i] = next_XOR_payload[i];
+  //   }
+
+  //   if (DCIMask_Command)
+  //   {
+  //     for (int i = 0; i < PAYLOAD_SIZE_MASK; i++)
+  //     {
+  //       next_XOR_payload[i] = default_XOR[i];
+  //     }
+  //   }
+  //   else
+  //   {
+  //     for (int i = 0; i < PAYLOAD_SIZE_MASK; i++)
+  //     {
+  //       next_XOR_payload[i] = 0;
+  //     }
+  //   }
+  // }
+
+  // Apply XOR if current_XOR_payload is not all 0s
+  int non_zero = 0;
+  for (int i = 0; i < PAYLOAD_SIZE_MASK; i++)
+  {
+    if (current_XOR_payload[i] != 0)
+    {
+      non_zero = 1;
+      break;
+    }
+  }
+
+  if (non_zero)
+  {
+    // XOR logic with actual data should be implemented here
+    for (size_t i = 0; i < 10; ++i)
+    {
+      // xor_array[i] = dist(rng);
+      xor_array[i] = current_XOR_payload[i];
+    }
+  }
+
+  for (size_t i = 0; i < 10; ++i)
+    {
+      // xor_array[i] = dist(rng);
+      xor_array[i] = current_XOR_payload[i];
+      
+    }
+
+  // if (a > start)
+  // {
+  //   flag1 = 1;
+  //   // printf("Underlay Transmission starts \n");
+  // }
+  // if (flag1)
+  // {
+  //   for (size_t i = 0; i < 10; ++i)
+  //   {
+  //     // xor_array[i] = dist(rng);
+  //     xor_array[i] = 1;
+  //   }
+  // }
+  // else
+  // {
+  //   for (size_t i = 0; i < modified_dci.payload.size(); ++i)
+  //   {
+  //     // xor_array[i] = dist(rng);
+  //     xor_array[i] = 0;
+  //   }
+  // }
+
+  // if(a  > start && a < end)
+  // {
+  //   for (size_t i = 0; i < modified_dci.payload.size(); ++i) {
+  //   // xor_array[i] = dist(rng);
+  //   xor_array[i] = 1;
+  //   }
+  // }
+  // else{
+  //   for (size_t i = 0; i < modified_dci.payload.size(); ++i) {
+  //   // xor_array[i] = dist(rng);
+  //   xor_array[i] = 0;
+  //   }
+  // }
+
+  // for (size_t i = 0; i < modified_dci.payload.size(); ++i) {
+  //   // xor_array[i] = dist(rng);
+  //   xor_array[i] = 1;
+  // }
+
+  // srsran_vec_fprint_hex(stdout, modified_dci.payload, modified_dci.payload.size());
+  // Print DCI before XOR
+  // std::cout << "DCI before XOR: \n";
+
+  for (size_t i = 0; i < modified_dci.payload.size(); ++i)
+  {
+    // std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(modified_dci.payload[i]) << " ";
+  }
+  // std::cout << std::dec << "\n"; // Switch back to decimal for any other output
+
+  // Apply XOR operation to the payload of modified_dci.
+  // if (twenty_seconds_passed()) {
+  //   xor_payload(modified_dci, xor_array);
+  // }
+  xor_payload(modified_dci, xor_array);
+  // print after xor
+  // std::cout << "DCI after XOR: \n";
+  for (size_t i = 0; i < modified_dci.payload.size(); ++i)
+  {
+    // std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(modified_dci.payload[i]) << " ";
+  }
+  // std::cout << std::dec << "\n"; // Switch back to decimal for any other output
+
   // Encode.
   span<uint8_t> encoded = span<uint8_t>(temp_encoded).first(nof_encoded_bits(dci.aggregation_level));
-  encoder->encode(encoded, dci.payload, encoder_config);
+  encoder->encode(encoded, modified_dci.payload, encoder_config);
 
   // Populate PDCCH modulator configuration.
   pdcch_modulator::config_t modulator_config;
