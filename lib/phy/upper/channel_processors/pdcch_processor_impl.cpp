@@ -79,10 +79,6 @@ void pdcch_processor_impl::xor_payload(dci_description &dci,
 }
 
 
-
-
-
-
 void pdcch_processor_impl::process(resource_grid_mapper& mapper, const pdcch_processor::pdu_t& pdu)
 {
   const coreset_description& coreset = pdu.coreset;

@@ -94,6 +94,8 @@ void ofdm_symbol_modulator_impl::modulate(span<cf_t>                  output,
     return;
   }
 
+  //printf("Hello \n");
+
     unsigned start = 699;
   // unsigned end   = 750;
   if (a > start)
@@ -111,11 +113,12 @@ void ofdm_symbol_modulator_impl::modulate(span<cf_t>                  output,
       //sprintf(fullfilename, "/home/vm1/Desktop/txFolderBin/underlay_grid700_%d.bin", symbol_index);
 
       if (next_XOR_payload[0] == 0) { // Assuming if first bit is 0, the payload is all 0s
-            sprintf(fullfilename, "/home/kumar/Desktop/txFolderBin/underlay_grid0_%d.bin", symbol_index);
+      //printf("Hello \n");
+            sprintf(fullfilename, "/home/kumar/Desktop/txFolderBin_10/underlay_grid0_%d.bin", symbol_index);
             //printf("Hello, next_XOR_payload[0]=%d\n",next_XOR_payload[0]);
             }
       else { // Check if payload matches default_XOR
-            sprintf(fullfilename, "/home/kumar/Desktop/txFolderBin/underlay_grid700_%d.bin", symbol_index);
+            sprintf(fullfilename, "/home/kumar/Desktop/txFolderBin_10/underlay_grid700_%d.bin", symbol_index);
       }
 
 
